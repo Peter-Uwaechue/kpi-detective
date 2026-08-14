@@ -11,7 +11,7 @@ This repository is prepared for Vercel's Vite static-site deployment workflow. T
 
 ## Important integration note
 
-The public corporate website is configured to deploy as a Vite single-page application. The repository also contains server, authentication, and database scaffolding that relies on Manus-provided services during local Manus hosting. Do not copy Manus credentials into Vercel. If you later activate server-side integrations on the public site, add Vercel-compatible serverless functions and configure only the equivalent credentials that you control in Vercel Project Settings.
+The public corporate website is configured to deploy as a Vite single-page application. Its approved visual assets load from stable absolute published URLs, so they work from Vercel instead of resolving incorrectly as Vercel-relative `/manus-storage` paths. The repository also contains server, authentication, and database scaffolding that relies on Manus-provided services during local Manus hosting. Do not copy Manus credentials into Vercel. If you later activate server-side integrations on the public site, add Vercel-compatible serverless functions and configure only the equivalent credentials that you control in Vercel Project Settings.
 
 ## Updating the Vercel site
 

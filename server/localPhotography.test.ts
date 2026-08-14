@@ -8,12 +8,12 @@ describe("locally grounded photography", () => {
   it("uses original Nigerian executive and workforce image assets across the shared image map", async () => {
     const source = await readFile(path.join(projectRoot, "client/src/pages/Home.tsx"), "utf8");
 
-    expect(source).toContain("/assets/willers-local-hero-lagos.jpg");
-    expect(source).toContain("/assets/willers-local-recruitment.jpg");
-    expect(source).toContain("/assets/willers-local-workforce.jpg");
-    expect(source).toContain("/assets/willers-local-people-operations.jpg");
-    expect(source).toContain("/assets/willers-local-learning.jpg");
-    expect(source).toContain("learning: \"/assets/willers-local-learning.jpg\"");
+    expect(source).toContain("willers-local-hero-lagos_10110178.jpg");
+    expect(source).toContain("willers-local-recruitment_6dcf4b4c.jpg");
+    expect(source).toContain("willers-local-workforce_0b686b00.jpg");
+    expect(source).toContain("willers-local-people-operations_75aefed4.jpg");
+    expect(source).toContain("willers-local-learning_1f52898c.jpg");
+    expect(source).toContain("learning: publishedAsset(\"willers-local-learning_1f52898c.jpg\")");
     expect(source).toContain("scenarioRecruitment");
     expect(source).toContain("scenarioHr");
     expect(source).toContain("scenarioWorkforce");

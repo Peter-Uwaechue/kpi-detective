@@ -213,7 +213,7 @@
 - [x] Remove the large white company-name label from the footer logo treatment.
 - [x] Enlarge the approved blue-and-copper logo mark while keeping the footer square-free.
 - [x] Verify the revised footer logo on desktop/mobile, run tests and build checks, then checkpoint the refinement.
-- [ ] Audit Manus-hosted image references and identify the assets unavailable in the GitHub/Vercel export.
-- [ ] Copy required website images into Vercel-served project assets and update references to portable paths.
-- [ ] Verify built asset URLs, run tests and build checks, then sync the fix to GitHub main.
-- [ ] Checkpoint the asset fix and provide Vercel redeployment guidance.
+- [x] Audit Manus-hosted image references and identify the assets unavailable in the GitHub/Vercel export.
+- [x] Copy required website images into Vercel-served project assets and update references to portable paths.
+- [x] Verify built asset URLs, run tests and build checks, then sync the fix to GitHub main.
+- [x] Checkpoint the asset fix and provide Vercel redeployment guidance.
