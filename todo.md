@@ -1,0 +1,212 @@
+- [x] Define location, salary range, job type, and sort options against the seeded job data.
+- [x] Add accessible filter controls and reset behavior to the Job Search route.
+- [x] Apply filtering, sorting, result counts, and no-results feedback.
+- [x] Verify the route on desktop and mobile, then checkpoint the completed enhancement.
+- [x] Add all 36 Nigerian states and the Federal Capital Territory to the Job Search location selector.
+- [x] Verify the selector compiles and presents states with zero active roles appropriately.
+- [x] Derive active-listing state counts from the current vacancy data.
+- [x] Add an accessible active-listing indicator to the location selection experience.
+- [x] Verify the updated location filtering controls and checkpoint the change.
+- [x] Add a dedicated Clear Filters button for the location, salary, and job-type controls.
+- [x] Verify that the reset leaves the keyword search and sort choice unchanged.
+- [x] Add an accessible loading state while filter and sort changes are applied.
+- [x] Animate a restrained editorial skeleton for job-list updates.
+- [x] Verify the transition, build, and job-search layout before checkpointing.
+- [x] Add job-card sharing controls with native sharing and email/social fallbacks.
+- [x] Verify links, accessibility, and event handling without disrupting card navigation.
+- [x] Add a Refer a Candidate action to each job card.
+- [x] Build an accessible referral modal with candidate and referrer details plus submission feedback.
+- [x] Verify modal interaction, build, and job-list layout before checkpointing.
+- [x] Define and implement real-time validation for required referral form fields.
+- [x] Show accessible inline errors and prevent invalid referral submission.
+- [x] Verify the validated referral flow and checkpoint the change.
+- [x] Add a refined celebratory animation to the referral success state.
+- [x] Respect reduced-motion preferences and verify the success modal experience.
+- [x] Add global route scroll-to-top behavior with explicit browser history handling.
+- [x] Preserve smooth, direct scrolling for intentional same-page anchor links.
+- [x] Verify navigation across the header, drawer, footer, hero, cards, and buttons before checkpointing.
+- [x] Upload and reference Hannah Uwaechue’s supplied director portrait as a durable web asset.
+- [x] Add Hannah’s refined leadership profile and Director role to the About Us experience.
+- [x] Verify the leadership section and checkpoint the update.
+- [x] Add restrained hover and keyboard-focus motion to the leadership profile cards.
+- [x] Verify the interaction and reduced-motion behavior before checkpointing.
+- [x] Replace the first placeholder leadership card with Hannah Uwaechue’s approved profile and portrait.
+- [x] Retain the remaining placeholder card slots for future approved leadership additions.
+- [x] Verify the corrected carousel and checkpoint the update.
+- [x] Add LinkedIn connection actions to leadership cards without inventing profile URLs.
+- [x] Provide clear pending-profile feedback where an approved LinkedIn URL is unavailable.
+- [x] Verify the networking controls and checkpoint the update.
+- [x] Replace Hannah’s LinkedIn people-search action with her verified direct profile URL.
+- [x] Verify the updated leadership link and checkpoint the change.
+- [x] Create a dedicated Hannah Uwaechue profile page with refined biography and role details.
+- [x] Add direct access from Hannah’s leadership card and an editorial contact form with confirmation state.
+- [x] Verify the profile page on desktop and mobile, then checkpoint the update.
+- [x] Remove Hannah’s duplicate director feature from the About Us leadership area while retaining her individual profile page.
+- [x] Convert the leadership cards into an automatic, pausable carousel with explicit controls and reduced-motion support.
+- [x] Remove Hannah’s remaining duplicate card from the About Us carousel while preserving her individual profile page.
+- [x] Verify the carousel behavior and responsive About Us layout before checkpointing.
+- [x] Restore Hannah Uwaechue as the first card in the automatic leadership carousel while retaining her dedicated profile page.
+- [x] Verify the restored slider entry and checkpoint the change.
+- CANCELED at the user’s request: Upgrade the project for persistent content, asset storage, and authenticated management.
+- CANCELED at the user’s request: Create a leadership content model for profiles, portraits, roles, biographies, LinkedIn links, order, and publishing state.
+- CANCELED at the user’s request: Build a leadership CMS editor and connect the public carousel and profile pages to managed content.
+- CANCELED at the user’s request: Verify CMS content updates and public rendering.
+- [x] Verify the restored non-CMS leadership carousel and Hannah individual profile, then save a rollback checkpoint.
+- [x] Add a clear Back to Leadership action to Hannah’s individual profile page.
+- [x] Verify the link returns to the About Us leadership carousel and checkpoint the update.
+- [x] Add smooth hover and keyboard-focus motion to the Back to Leadership button.
+- [x] Verify the interaction, keyboard focus, and reduced-motion behavior before checkpointing.
+- [x] Reduce the automatic leadership-carousel interval to a quicker, comfortable cadence.
+- [x] Verify automatic advancement, interaction pausing, and checkpoint the timing update.
+- [x] Add a subtle, mobile-only swipe indicator to the leadership carousel.
+- [x] Verify the indicator’s responsive presentation, accessibility, carousel behavior, and checkpoint the enhancement.
+- [x] Remove the top navigation’s location and email strip.
+- [x] Upload the supplied Willers Solutions Limited logo as a durable project asset and replace every existing logo instance.
+- [x] Verify global logo presentation, responsive header layout, build checks, and checkpoint the branding update.
+- [x] Create a transparent-background version of the supplied Willers Solutions Limited logo without changing the mark or wordmark.
+- [x] Replace the current global logo asset and verify header, drawer, footer, build checks, and checkpoint the update.
+- [x] Add an editorial multicolor contrast treatment behind the transparent logo on dark surfaces.
+- [x] Improve header navigation and menu-control visibility on the hero image without defaulting to white.
+- [x] Verify desktop and mobile visibility, footer branding, build checks, and checkpoint the enhancement.
+- [x] Convert the home-page services rail into an automatic, pausable carousel with manual controls and progress indicators.
+- [x] Add responsive swipe guidance and preserve reduced-motion support for the services carousel.
+- [x] Verify automatic advancement, manual controls, interaction pausing, mobile layout, build checks, and checkpoint the enhancement.
+- [x] Reframe the global website narrative around end-to-end HR, recruitment, and outsourcing partnership.
+- [x] Expand the home, employer, services, about, resources, insights, contact, and job-related content with substantive service-led copy.
+- [x] Add clear outsourcing, HR advisory, workforce management, and recruitment pathways without inventing customer claims or testimonials.
+- [x] Verify cross-page messaging, responsive presentation, tests, build checks, and checkpoint the expanded positioning.
+- [x] Expand Job Search and Job Details copy to reflect recruitment within the broader HR and workforce-solutions offer where appropriate.
+- [x] Save and verify a checkpoint for the completed HR, recruitment, and outsourcing positioning update.
+- [x] Create a dedicated Outsourcing page that explains workforce outsourcing, employer outcomes, and engagement pathways.
+- [x] Build a detailed employer outsourcing enquiry form with service, workforce, timeline, location, and contact details.
+- [x] Add visible navigation pathways to the Outsourcing page from relevant service and employer content.
+- [x] Verify form validation, success feedback, responsive layout, routing, tests, build checks, and checkpoint the experience.
+- [x] Correct the homepage hero layout so the large statistics are not clipped above the following section.
+- [x] Verify desktop and mobile hero visibility, build checks, and checkpoint the layout fix.
+- [x] Add a subtle staggered fade-in to the homepage hero statistics.
+- [x] Verify the animation presentation, reduced-motion safeguard, build checks, and checkpoint the enhancement.
+- [x] Add a slow five-colour animated accent cycle to the homepage hero statistics.
+- [x] Verify contrast, reduced-motion support, responsive presentation, build checks, and checkpoint the multicolour treatment.
+- [x] Rework the homepage hierarchy so it reads as a corporate website entry point rather than a standalone marketing landing page.
+- [x] Strengthen global navigation and visible pathways to core corporate pages, services, outsourcing, careers, and employer enquiries.
+- [x] Verify the corporate-site hierarchy across desktop and mobile, tests, build checks, and checkpoint the restructuring.
+- [x] Replace the oversized campaign-style home hero with a compact corporate introduction and quick access to core website areas.
+- [x] Create a dedicated Industries page covering the sectors supported through recruitment and workforce outsourcing.
+- [x] Add structured sector content, relevant recruitment/outsourcing service context, and employer enquiry pathways.
+- [x] Add Industries to the appropriate global navigation and corporate homepage pathways.
+- [x] Verify route access, sector content, responsive layout, tests, build checks, and checkpoint the new page.
+- [x] Expand the Industries page into a comprehensive sector directory covering the full range of employer industries.
+- [x] Group and present additional sectors clearly while retaining recruitment and workforce-outsourcing relevance.
+- [x] Verify sector-directory scanning, responsive layout, tests, build checks, and checkpoint the expansion.
+- [x] Add clear industry-specific visual marks beside sector listings and directory groups.
+- [x] Restore a richer, more polished corporate visual hierarchy to the homepage and Industries experience.
+- [x] Verify visual balance, responsive presentation, tests, build checks, and checkpoint the refinement.
+- [x] Add smooth hover and keyboard-focus lift, highlight, and icon emphasis to featured industry cards.
+- [x] Verify motion preferences, desktop/mobile presentation, tests, build checks, and checkpoint the interaction enhancement.
+- [x] Review the supplied workforce-resourcing reference and identify key visual hierarchy, layout, and conversion patterns to improve.
+- [x] Redesign the workforce-resourcing and core corporate experience for stronger visual quality, clearer service storytelling, and more intentional calls to action.
+- [x] Verify desktop/mobile polish, functional pathways, tests, build checks, and checkpoint the reference-informed redesign.
+- [x] Expand the corporate homepage with a more detailed, reference-informed service narrative, stronger visual sections, and deeper employer conversion pathways.
+- [x] Add purposeful homepage content modules for service outcomes, workforce scenarios, sector context, and insights without inventing client claims or testimonials.
+- [x] Verify the expanded homepage on desktop/mobile, run tests and build checks, then checkpoint the refinement.
+- [x] Fix the homepage services carousel so the active image and card content do not clip at either side of the viewport.
+- [x] Verify carousel controls, automatic movement, and responsive desktop/mobile presentation, then checkpoint the correction.
+- [x] Increase the visual separation above the homepage services heading so it does not feel packed against the preceding dark section.
+- [x] Verify the revised spacing on desktop/mobile and checkpoint the refinement.
+- [x] Add subtle hover and keyboard-focus animations to the homepage “What we do” service cards.
+- [x] Respect reduced-motion preferences, verify the interaction on desktop/mobile, and checkpoint the enhancement.
+- [x] Create dedicated, in-depth pages for Recruitment & Executive Search, Workforce Outsourcing, HR Advisory & Organisation Design, People Operations & Payroll Support, and Learning & Capability Development.
+- [x] Connect every homepage service-card interaction and service-page CTA to the relevant service-detail route and employer enquiry path.
+- [x] Verify service-detail routes, desktop/mobile layouts, tests, build checks, and checkpoint the expansion.
+- [x] Ensure navigation links open new routes at the top without overwriting the scroll position of the page being left.
+- [x] Restore the correct saved scroll position when visitors use browser Back and Forward, while preserving intentional in-page anchors.
+- [x] Verify link navigation and history scrolling across desktop/mobile, run tests and build checks, then checkpoint the correction.
+- [x] Replace the current generic heading and interface typography with a more distinctive, human-crafted editorial type system.
+- [x] Apply the new typography consistently across the homepage, service pages, navigation, forms, and responsive breakpoints while preserving legibility.
+- [x] Verify desktop/mobile typography, tests, and build checks, then checkpoint the refinement.
+- [x] Define and create a coherent set of original Nigerian executive, workplace, and workforce images to replace generic visual storytelling across the site.
+- [x] Replace repeated stock-image references across homepage, service-detail, outsourcing, industries, and corporate pages with the new locally specific assets.
+- [x] Verify desktop/mobile imagery, tests, and build checks, then checkpoint the visual-authenticity refresh.
+- [x] Audit and remove repeated photography across homepage scenarios, service cards, service-detail pages, outsourcing sections, leadership, and insights.
+- [x] Create and assign a distinct locally grounded image to every major service and visual-storytelling feature.
+- [x] Verify desktop/mobile image uniqueness, tests, and build checks, then checkpoint the refinement.
+- [x] Rebalance the site’s homepage hierarchy, service framing, CTA language, and photography so HR, recruitment, and talent advisory lead the Willers identity.
+- [x] Keep workforce outsourcing as a clear but secondary capability without presenting Willers as a workforce-outsourcing-only company.
+- [x] Verify the revised positioning and imagery on desktop/mobile, run tests and build checks, then checkpoint the correction.
+- [x] Restore workforce outsourcing as an explicit core offering in the homepage headline, service framing, and employer pathways alongside HR, recruitment, and talent advisory.
+- [x] Preserve the balanced company identity so no single service is presented as the only Willers offering.
+- [x] Verify the corrected four-part positioning on desktop/mobile, run tests and build checks, then checkpoint the refinement.
+- [x] Replace the current badge-style logo presentation with a clean, professional vector-style Willers Solutions wordmark.
+- [x] Apply the refined wordmark consistently across header, drawer, footer, and mobile layouts while preserving contrast on light and dark surfaces.
+- [x] Verify brand visibility, tests, and build checks, then checkpoint the wordmark refinement.
+- [x] Remove the invented vector wordmark and restore the user-supplied Willers Solutions logo exactly across header, drawer, footer, and mobile layouts.
+- [x] Verify the restored supplied logo on light and dark brand surfaces, run tests and build checks, then checkpoint the correction.
+- [x] Remove “workforce” from the outsourcing service name, page headings, navigation labels, CTAs, and employer-facing copy while retaining accurate outsourcing descriptions.
+- [x] Preserve Willers Solutions Limited as the company identity and keep Outsourcing positioned as one of its services.
+- [x] Verify simplified outsourcing naming on desktop/mobile, run tests and build checks, then checkpoint the correction.
+- [x] Remove remaining visible outsourcing-related “workforce” wording from homepage scenarios and employer-facing copy.
+- [x] Remove the legacy workforce-branded outsourcing page implementation while retaining only the backward-compatible route alias.
+- [x] Re-verify simplified outsourcing naming across desktop/mobile, tests, build checks, and checkpoint the completed correction.
+- [x] Change the homepage At a Glance service labels to a luminous light-blue accent with accessible contrast against the dark image.
+- [x] Verify the light-blue accent on desktop/mobile, run tests and build checks, then checkpoint the refinement.
+- [x] Streamline the mobile navigation into a concise set of priority links with secondary destinations grouped separately.
+- [x] Preserve access to all existing pages while making the mobile menu shorter, clearer, and more professional.
+- [x] Verify the mobile menu layout, links, tests, and build checks, then checkpoint the refinement.
+- [x] Add a compact, accessible social-media icon row at the bottom of the mobile navigation menu.
+- [x] Verify social links, mobile presentation, tests, and build checks, then checkpoint the enhancement.
+- [x] Refine the dark footer with richer color layering, stronger contrast, and more intentional outlines and dividers.
+- [x] Improve mobile footer link hierarchy and visual depth without removing contact or navigation access.
+- [x] Verify refreshed footer presentation on desktop/mobile, run tests and build checks, then checkpoint the refinement.
+- [x] Add a dedicated footer social-media row for Instagram, Facebook, X (Twitter), and TikTok.
+- [x] Preserve accessible, clearly labelled social controls and responsive footer hierarchy without inventing unverified company profile URLs.
+- [x] Verify the footer social row on desktop/mobile, run tests and build checks, then checkpoint the enhancement.
+- [x] Increase the visual separation between the Willers Solutions Limited company label and the homepage service headline.
+- [x] Establish a clearer responsive hierarchy so the company name reads as a distinct identity label on mobile and desktop.
+- [x] Verify the masthead spacing across mobile and desktop, run tests and build checks, then checkpoint the refinement.
+- [x] Refine the At a Glance panel with a richer background colour overlay rather than changing its text colour.
+- [x] Preserve clear, neutral typography and readable service-detail rows over the new panel treatment.
+- [x] Verify the revised panel on desktop/mobile, run tests and build checks, then checkpoint the refinement.
+- [x] Remove the redundant small Outsourcing label above the dedicated page headline.
+- [x] Preserve the full Outsourcing title, supporting copy, and responsive spacing.
+- [x] Verify the revised Outsourcing masthead, run tests and build checks, then checkpoint the update.
+- [x] Remove Sector Excellence from the homepage moving sector slider.
+- [x] Preserve the remaining industry names and continuous slider presentation.
+- [x] Verify the updated slider, run tests and build checks, then checkpoint the change.
+- [x] Replace the full-screen mobile navigation drawer with a compact dropdown below the header.
+- [x] Preserve all priority, secondary, and social navigation controls without obscuring the entire page.
+- [x] Verify menu behavior, responsive presentation, tests, and build checks, then checkpoint the redesign.
+- [x] Add a second moving editorial ribbon in the middle of the homepage.
+- [x] Use concise animated copy that connects recruitment, HR advisory, outsourcing, people operations, and talent development.
+- [x] Preserve reduced-motion support and verify the new ribbon on desktop/mobile, then checkpoint the enhancement.
+- [x] Research credible public recruitment benchmark ranges that can be presented as industry context, not Willers performance claims.
+- [x] Add a subtle animated benchmark counter section with clear industry-reference qualification copy and source access.
+- [x] Preserve reduced-motion support and verify the counter section on desktop/mobile, then checkpoint the enhancement.
+- [x] Replace public industry benchmark counters with verified January–December 2025 Willers Solutions recruitment metrics.
+- [x] Add the supplied offer acceptance, time to hire, conversion, quality-of-hire, retention, satisfaction, and completion metrics with clear reporting-period attribution.
+- [x] Remove public-source benchmark disclaimer and links, then verify counter content, animation, and responsive presentation before checkpointing.
+- [x] Add a clear employer call-to-action directly below the verified recruitment metrics.
+- [x] Link the action to the existing employer hiring enquiry route and preserve responsive layout.
+- [x] Verify the metrics call-to-action on desktop/mobile, run tests and build checks, then checkpoint the enhancement.
+- [x] Add a global floating back-to-top arrow that appears after scrolling down a long page.
+- [x] Preserve accessible labelling, keyboard use, smooth return behavior, and reduced-motion support.
+- [x] Verify the control across long pages on desktop/mobile, run tests and build checks, then checkpoint the enhancement.
+- [x] Remove visible square and coloured background treatments around the approved Willers Solutions logo.
+- [x] Retain the exact supplied logo asset and preserve clear presentation across header, menu, and footer surfaces.
+- [x] Verify clean logo presentation on desktop/mobile, run tests and build checks, then checkpoint the refinement.
+- [x] Lighten the footer logo to match the clear header-logo presentation without restoring any background square.
+- [x] Preserve the exact supplied logo and transparent treatment across dark footer surfaces.
+- [x] Verify footer logo contrast on desktop/mobile, run tests and build checks, then checkpoint the refinement.
+- [x] Restore the footer logo’s original blue and copper colours to match the header.
+- [x] Retain the transparent, square-free logo treatment on the dark footer.
+- [x] Verify original footer-logo colours and clean presentation, run tests and build checks, then checkpoint the correction.
+- [x] Create a footer-specific approved-logo variant that retains the blue and copper mark while making the company name white.
+- [x] Apply the footer-specific logo only to dark footer surfaces without changing the header or navigation logo.
+- [x] Verify the footer logo on desktop/mobile, run tests and build checks, then checkpoint the update.
+- [x] Remove the extra footer company-name text and preserve only the approved logo name treatment.
+- [x] Make the existing company name within the footer logo white while retaining the original blue and copper mark.
+- [x] Inspect and safely test the GitHub connector with a read-only data fetch, then summarize its capabilities.
+- [x] Verify the corrected footer logo, run tests and build checks, checkpoint the website, and report the connector result.
+- [ ] Inspect the selected Willers-solutions GitHub repository and current application deployment requirements.
+- [ ] Export the complete current website code and add Vercel deployment configuration and documentation.
+- [ ] Push the prepared code to GitHub and verify the remote repository state.
+- [ ] Provide the Vercel connection steps needed for automatic deployments from GitHub.
