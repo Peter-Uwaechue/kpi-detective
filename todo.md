@@ -218,6 +218,9 @@
 - [x] Verify built asset URLs, run tests and build checks, then sync the fix to GitHub main.
 - [x] Checkpoint the asset fix and provide Vercel redeployment guidance.
 - [x] Remove duplicate local image copies from the Manus project after preserving the GitHub export and confirming published image URLs load.
-- [ ] Convert the three-card values section into an automatic carousel that advances every two seconds.
-- [ ] Add accessible manual navigation and pause behavior without losing the existing values copy or editorial style.
-- [ ] Verify carousel timing and responsive behavior, run tests and build checks, then checkpoint the update.
+- [x] Convert the three-card values section into an automatic carousel that advances every two seconds.
+- [x] Add accessible manual navigation and pause behavior without losing the existing values copy or editorial style.
+- [x] Verify carousel timing and responsive behavior, run tests and build checks, then checkpoint the update.
+- [ ] Compare the current verified project with the connected GitHub working copy.
+- [ ] Commit and push any latest website changes to GitHub main.
+- [ ] Verify the remote repository commit and report the completed sync.
