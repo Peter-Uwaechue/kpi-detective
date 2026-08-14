@@ -228,7 +228,7 @@ button { border:0; background:none; color:inherit; }
 @media (prefers-reduced-motion:reduce) { .back-to-top { transition:none; } }
 .brand-logo,.footer .brand-logo { height:44px; padding:0!important; border:0!important; background:transparent!important; box-shadow:none!important; }
 .footer .brand-logo { filter:none; opacity:1; }
-.footer-logo-shell { position:relative; display:block; width:116px; height:54px; }.footer-logo-original { display:block; width:116px; height:auto; max-width:none; }.footer-logo-name-overlay { position:absolute; z-index:1; left:50%; top:40px; transform:translateX(-50%); color:#fff; font:600 7px/1 Georgia,serif; letter-spacing:.01em; white-space:nowrap; text-shadow:0 1px 3px rgba(0,0,0,.48); }
+.footer-logo-mark-frame { display:block; width:168px; height:56px; overflow:hidden; }.footer-logo-mark { display:block; width:168px; height:auto; max-width:none; }
 .company-identity-label { display:flex; align-items:center; width:fit-content; gap:10px; margin:0 0 32px; padding:0 0 15px; border-bottom:1px solid rgba(180,83,9,.42); }
 .company-identity-label::before { content:""; width:7px; height:7px; flex:0 0 auto; background:var(--copper); box-shadow:11px 0 0 rgba(180,83,9,.22); }
 .company-identity-label .eyebrow { margin:0; color:#596870; font-size:11px; letter-spacing:.19em; }

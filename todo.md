@@ -206,7 +206,10 @@
 - [x] Make the existing company name within the footer logo white while retaining the original blue and copper mark.
 - [x] Inspect and safely test the GitHub connector with a read-only data fetch, then summarize its capabilities.
 - [x] Verify the corrected footer logo, run tests and build checks, checkpoint the website, and report the connector result.
-- [ ] Inspect the selected Willers-solutions GitHub repository and current application deployment requirements.
-- [ ] Export the complete current website code and add Vercel deployment configuration and documentation.
-- [ ] Push the prepared code to GitHub and verify the remote repository state.
-- [ ] Provide the Vercel connection steps needed for automatic deployments from GitHub.
+- [x] Inspect the selected Willers-solutions GitHub repository and current application deployment requirements.
+- [x] Export the complete current website code and add Vercel deployment configuration and documentation.
+- [x] Push the prepared code to GitHub and verify the remote repository state.
+- [x] Provide the Vercel connection steps needed for automatic deployments from GitHub.
+- [ ] Remove the large white company-name label from the footer logo treatment.
+- [ ] Enlarge the approved blue-and-copper logo mark while keeping the footer square-free.
+- [ ] Verify the revised footer logo on desktop/mobile, run tests and build checks, then checkpoint the refinement.

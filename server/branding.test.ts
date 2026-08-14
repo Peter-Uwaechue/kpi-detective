@@ -14,15 +14,14 @@ describe("site branding", () => {
     expect(page).toContain('mark: "/manus-storage/willers-solutions-limited-logo-transparent-exact_9ea212a2.png"');
     expect((page.match(/className="brand-logo"/g) ?? [])).toHaveLength(2);
     expect((page.match(/alt="Willers Solutions Limited"/g) ?? [])).toHaveLength(2);
-    expect(page).toContain('className="footer-logo-name-overlay"');
-    expect(page).toContain("Willers Solutions Limited</span>");
+    expect(page).toContain('className="footer-logo-mark"');
+    expect(page).not.toContain('className="footer-logo-name-overlay"');
     expect(page).not.toContain('className="drawer-foot"');
     expect(page).toContain('return <div className="corporate-home"><Header /><main>');
     expect(styles).toContain(".brand-logo,.footer .brand-logo");
     expect(styles).toContain("padding:0!important; border:0!important; background:transparent!important; box-shadow:none!important");
     expect(styles).toContain(".footer .brand-logo { filter:none; opacity:1; }");
-    expect(styles).toContain(".footer-logo-name-overlay { position:absolute");
-    expect(styles).toContain("color:#fff");
+    expect(styles).toContain(".footer-logo-mark-frame { display:block; width:168px; height:56px; overflow:hidden; }");
     expect(styles).toContain(".header-dark .menu-toggle");
     expect(styles).toContain(".footer .brand-logo");
   });
