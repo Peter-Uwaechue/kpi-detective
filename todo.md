@@ -221,6 +221,6 @@
 - [x] Convert the three-card values section into an automatic carousel that advances every two seconds.
 - [x] Add accessible manual navigation and pause behavior without losing the existing values copy or editorial style.
 - [x] Verify carousel timing and responsive behavior, run tests and build checks, then checkpoint the update.
-- [ ] Compare the current verified project with the connected GitHub working copy.
-- [ ] Commit and push any latest website changes to GitHub main.
-- [ ] Verify the remote repository commit and report the completed sync.
+- [x] Compare the current verified project with the connected GitHub working copy.
+- [x] Commit and push any latest website changes to GitHub main.
+- [x] Verify the remote repository commit and report the completed sync.
