@@ -11,7 +11,7 @@ describe("site branding", () => {
       readFile(path.join(projectRoot, "client/src/index.css"), "utf8"),
     ]);
 
-    expect(page).toContain('mark: "/manus-storage/willers-solutions-limited-logo-transparent-exact_9ea212a2.png"');
+    expect(page).toContain('mark: "/assets/willers-solutions-limited-logo-transparent-exact.png"');
     expect((page.match(/className="brand-logo"/g) ?? [])).toHaveLength(2);
     expect((page.match(/alt="Willers Solutions Limited"/g) ?? [])).toHaveLength(2);
     expect(page).toContain('className="footer-logo-mark"');

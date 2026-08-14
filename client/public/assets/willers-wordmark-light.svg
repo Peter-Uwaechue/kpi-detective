@@ -1,0 +1,10 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="360" height="62" viewBox="0 0 360 62" role="img" aria-labelledby="title desc">
+  <title id="title">Willers Solutions Limited</title>
+  <desc id="desc">Interlocking W symbol with Willers Solutions Limited wordmark</desc>
+  <g fill="none" stroke-linecap="round" stroke-linejoin="round" stroke-width="4.5">
+    <path d="M5 10 13 47 22 19 31 47 39 10" stroke="#d8e5dc"/>
+    <path d="M22 10 30 47 39 19 48 47 56 10" stroke="#e7a36d"/>
+  </g>
+  <text x="74" y="27" fill="#f9f7f2" font-family="Arial, Helvetica, sans-serif" font-size="19" font-weight="700" letter-spacing="4.4">WILLERS</text>
+  <text x="75" y="45" fill="#c8d8cf" font-family="Arial, Helvetica, sans-serif" font-size="8.2" font-weight="700" letter-spacing="3.1">SOLUTIONS LIMITED</text>
+</svg>

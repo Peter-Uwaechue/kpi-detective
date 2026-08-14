@@ -210,6 +210,10 @@
 - [x] Export the complete current website code and add Vercel deployment configuration and documentation.
 - [x] Push the prepared code to GitHub and verify the remote repository state.
 - [x] Provide the Vercel connection steps needed for automatic deployments from GitHub.
-- [ ] Remove the large white company-name label from the footer logo treatment.
-- [ ] Enlarge the approved blue-and-copper logo mark while keeping the footer square-free.
-- [ ] Verify the revised footer logo on desktop/mobile, run tests and build checks, then checkpoint the refinement.
+- [x] Remove the large white company-name label from the footer logo treatment.
+- [x] Enlarge the approved blue-and-copper logo mark while keeping the footer square-free.
+- [x] Verify the revised footer logo on desktop/mobile, run tests and build checks, then checkpoint the refinement.
+- [ ] Audit Manus-hosted image references and identify the assets unavailable in the GitHub/Vercel export.
+- [ ] Copy required website images into Vercel-served project assets and update references to portable paths.
+- [ ] Verify built asset URLs, run tests and build checks, then sync the fix to GitHub main.
+- [ ] Checkpoint the asset fix and provide Vercel redeployment guidance.
