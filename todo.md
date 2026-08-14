@@ -214,6 +214,10 @@
 - [x] Enlarge the approved blue-and-copper logo mark while keeping the footer square-free.
 - [x] Verify the revised footer logo on desktop/mobile, run tests and build checks, then checkpoint the refinement.
 - [x] Audit Manus-hosted image references and identify the assets unavailable in the GitHub/Vercel export.
-- [x] Copy required website images into Vercel-served project assets and update references to portable paths.
+- [x] Make every website image portable to Vercel through stable published image URLs and update all references accordingly.
 - [x] Verify built asset URLs, run tests and build checks, then sync the fix to GitHub main.
 - [x] Checkpoint the asset fix and provide Vercel redeployment guidance.
+- [x] Remove duplicate local image copies from the Manus project after preserving the GitHub export and confirming published image URLs load.
+- [ ] Convert the three-card values section into an automatic carousel that advances every two seconds.
+- [ ] Add accessible manual navigation and pause behavior without losing the existing values copy or editorial style.
+- [ ] Verify carousel timing and responsive behavior, run tests and build checks, then checkpoint the update.

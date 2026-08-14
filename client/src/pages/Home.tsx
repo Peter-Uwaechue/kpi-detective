@@ -440,11 +440,33 @@ const companyPages: Record<Exclude<CompanyPageType, "contact">, CompanyPageConte
 };
 function ContentDossier({ page }: { page: CompanyPageContent }) { return <><section className="capability-dossier"><div className="capability-dossier-intro"><Eyebrow>{page.sectionLabel}</Eyebrow><h2>{page.sectionTitle}</h2><p>{page.closing}</p></div><div className="capability-dossier-grid">{page.items.map((item, index) => <article key={item.title}><span>0{index + 1}</span><h3>{item.title}</h3><p>{item.copy}</p></article>)}</div></section><div className="content-callout"><Eyebrow>READY WHEN YOU ARE</Eyebrow><p>Tell us what is changing, what needs attention, and where you need support. We will help you find the most useful way forward.</p><Link href={page.link} className="text-link">{page.linkLabel} <ArrowRight size={17} /></Link></div></>; }
 function ContactGuidance() { return <div className="contact-guidance"><Eyebrow>WHAT TO EXPECT</Eyebrow><h2>Bring the question.<br /><em>We’ll bring the structure.</em></h2><p>Whether you need to recruit a team, outsource a workforce, strengthen people operations, or talk through a wider HR challenge, start with the context you have. Our team will respond with a clear next step.</p><div><span>01</span><p>Share the immediate priority and the outcome you need from it.</p><span>02</span><p>Tell us what is already working and where the pressure sits.</p><span>03</span><p>We will help shape the right conversation from there.</p></div></div>; }
+const values = [
+  { title: "Discernment", copy: "We make space for the detail, context, and judgement that good people decisions require." },
+  { title: "Candour", copy: "We offer an honest view of what is working, what needs attention, and what progress will take." },
+  { title: "Accountability", copy: "We stay close to the work, the people, and the practical actions that turn a recommendation into movement." },
+];
+function ValuesCarousel() {
+  const [active, setActive] = useState(0);
+  const [playing, setPlaying] = useState(true);
+  const advance = (direction: 1 | -1 = 1) => setActive((current) => (current + direction + values.length) % values.length);
+
+  useEffect(() => {
+    if (!playing || window.matchMedia("(prefers-reduced-motion: reduce)").matches) return;
+    const timer = window.setInterval(() => advance(), 2000);
+    return () => window.clearInterval(timer);
+  }, [playing]);
+
+  return <section id="values-carousel" className="values-carousel" aria-label="How we work" onMouseEnter={() => setPlaying(false)} onMouseLeave={() => setPlaying(true)}>
+    <div className="values-carousel-head"><Eyebrow>HOW WE WORK</Eyebrow><p>Three principles that guide how we approach people decisions.</p></div>
+    <div className="values-carousel-stage" aria-live="polite">{values.map((value, index) => <article key={value.title} className={`values-slide ${index === active ? "is-active" : ""}`} aria-hidden={index !== active}><span>0{index + 1}</span><h3>{value.title}</h3><p>{value.copy}</p></article>)}</div>
+    <div className="values-carousel-controls"><button type="button" aria-label="Show previous value" onClick={() => advance(-1)}><ArrowLeft size={17} /></button><div className="values-carousel-dots" aria-label={`Showing value ${active + 1} of ${values.length}`}>{values.map((value, index) => <button key={value.title} type="button" className={index === active ? "is-active" : ""} aria-label={`Show ${value.title}`} aria-pressed={index === active} onClick={() => setActive(index)} />)}</div><button type="button" className="values-play-toggle" aria-label={playing ? "Pause automatic values carousel" : "Resume automatic values carousel"} onClick={() => setPlaying((current) => !current)}>{playing ? <Pause size={15} /> : <Play size={15} />}</button><button type="button" aria-label="Show next value" onClick={() => advance()}><ArrowRight size={17} /></button></div>
+  </section>;
+}
 function ContentPage({ type }: { type: CompanyPageType }) {
   if (type === "contact") return <PageFrame eyebrow="CONTACT / 07" title={<>Let’s make<br /><em>work work better.</em></>} intro="Start a conversation about recruitment, workforce outsourcing, HR advisory, people operations, or the people challenge currently asking for your attention."><div className="editorial-body contact-body"><div><div className="body-lead"><Eyebrow>START HERE</Eyebrow><p className="large-copy">The most useful conversations start with what is true now: the work you need to deliver, the people questions in the way, and the support that would make a difference.</p></div><ContactGuidance /></div><ContactForm /></div></PageFrame>;
   const page = companyPages[type];
   const isAbout = type === "about";
-  return <PageFrame eyebrow={page.eyebrow} title={page.title} intro={page.intro}><div className="editorial-body"><div className="body-lead"><Eyebrow>{isAbout ? "WHO WE ARE" : "HOW WE HELP"}</Eyebrow><p className="large-copy">{page.lead}</p></div><ContentDossier page={page} />{isAbout ? <><div className="values-grid">{["Discernment", "Candour", "Accountability"].map((value, index) => <div key={value}><span>0{index + 1}</span><h3>{value}</h3><p>{value === "Discernment" ? "We make space for the detail, context, and judgement that good people decisions require." : value === "Candour" ? "We offer an honest view of what is working, what needs attention, and what progress will take." : "We stay close to the work, the people, and the practical actions that turn a recommendation into movement."}</p></div>)}</div><LeadershipCarousel /></> : null}</div></PageFrame>;
+  return <PageFrame eyebrow={page.eyebrow} title={page.title} intro={page.intro}><div className="editorial-body"><div className="body-lead"><Eyebrow>{isAbout ? "WHO WE ARE" : "HOW WE HELP"}</Eyebrow><p className="large-copy">{page.lead}</p></div><ContentDossier page={page} />{isAbout ? <><ValuesCarousel /><LeadershipCarousel /></> : null}</div></PageFrame>;
 }
 function LeadershipCarousel() {
   const railRef = useRef<HTMLDivElement>(null);
