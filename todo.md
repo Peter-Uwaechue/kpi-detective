@@ -266,3 +266,6 @@
 - [x] Test representative desktop and mobile actions, then sync and deploy the interaction repair.
 - [x] Replace the slim “Discuss your outsourcing need” text link with a clear full-surface CTA.
 - [x] Confirm the improved outsourcing CTA responds on a single tap or click, then test and deploy it.
+- [x] Audit website image loading priorities, asset dimensions, and current delivery behaviour.
+- [x] Add responsive image-loading optimisations without changing the approved photography.
+- [x] Test, sync, and deploy the image performance improvements.
