@@ -236,3 +236,8 @@
 - [x] Verify the revised social-link destination, run tests, and deploy the update to GitHub and Vercel.
 - [x] Replace the existing X social link with the provided official Willers Solutions Limited profile everywhere it appears.
 - [x] Verify the revised X link, run tests, and deploy the update to GitHub and Vercel.
+- [x] Confirm the existing TikTok social link already matches the provided official Willers Solutions Limited profile everywhere it appears.
+- [x] Verify the supplied TikTok profile resolves to Willers Solutions Limited; no code, test, or deployment change is required.
+- [x] Inventory every social-media destination used by the footer and mobile navigation.
+- [x] Verify LinkedIn, Instagram, Facebook, X, and TikTok against the official profiles supplied by Willers Solutions.
+- [x] Confirm no social-link discrepancy was identified, so no website correction or deployment was required.
