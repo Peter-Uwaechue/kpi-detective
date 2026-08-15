@@ -8,3 +8,5 @@ Research date: 15 August 2026
 | https://www.connectnigeria.com/businesses/willers-solutions-limited-1269007 | Repeats the Victoria Island address. Its business-hours panel lists **Monday–Saturday, 8:00 AM–6:00 PM**; Sunday is not listed. The listing is labelled **Not Verified**. | Corroborating address source and the only published hours schedule found. |
 
 The footer uses the user-approved **8, Adebambo Street, Obanikoro, Lagos** address and the published Monday–Saturday, 8:00 AM–6:00 PM schedule, without inventing a Sunday arrangement.
+
+The address links to Google Maps directions using `https://www.google.com/maps/dir/?api=1&destination=8%2C%20Adebambo%20Street%2C%20Obanikoro%2C%20Lagos`.

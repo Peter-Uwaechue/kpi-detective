@@ -28,9 +28,12 @@ describe("footer visual refinement", () => {
     expect(page).not.toContain("Built for better people work.");
     expect(page).toContain("8, Adebambo Street, Obanikoro, Lagos");
     expect(page).not.toContain("5b, Samuel Adedoyin, Behind Zenith Headquarters, Victoria Island, Lagos");
+    expect(page).toContain('href="https://www.google.com/maps/dir/?api=1&destination=8%2C%20Adebambo%20Street%2C%20Obanikoro%2C%20Lagos"');
+    expect(page).toContain("Get directions to Willers Solutions in Obanikoro on Google Maps");
     expect(page).toContain("Hours: Mon–Sat, 8:00 AM–6:00 PM");
     expect(styles).toContain(".footer-credit");
     expect(styles).toContain(".footer-contact-detail");
+    expect(styles).toContain(".footer-contact-detail:focus-visible");
     expect(styles).toContain(".footer-operating-hours");
     expect(styles).toContain("color:rgba(249,247,242,.54)");
   });

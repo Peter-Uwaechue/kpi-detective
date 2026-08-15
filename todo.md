@@ -254,3 +254,5 @@
 - [x] Test, sync, and deploy the footer operating-details update.
 - [x] Remove the Victoria Island address from the footer and use only the approved Obanikoro office address.
 - [x] Verify the corrected address, test, and deploy the footer update.
+- [x] Make the Obanikoro footer address open Google Maps directions in a new tab.
+- [x] Verify the accessible directions link, test, and deploy the footer update.
