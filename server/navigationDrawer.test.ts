@@ -5,13 +5,13 @@ import { describe, expect, it } from "vitest";
 const projectRoot = path.resolve(import.meta.dirname, "..");
 
 describe("streamlined navigation drawer", () => {
-  it("prioritises four main destinations and groups all secondary destinations without removing routes", async () => {
+  it("prioritises Home and four main destinations while grouping all secondary destinations without removing routes", async () => {
     const [page, styles] = await Promise.all([
       readFile(path.join(projectRoot, "client/src/pages/Home.tsx"), "utf8"),
       readFile(path.join(projectRoot, "client/src/index.css"), "utf8"),
     ]);
 
-    expect(page).toContain('const primaryDrawerItems = ["Job Search", "For Employers", "Outsourcing", "About Us"]');
+    expect(page).toContain('const primaryDrawerItems = ["Home", "Job Search", "For Employers", "Outsourcing", "About Us"]');
     expect(page).toContain('const secondaryDrawerItems = ["Industries", "Our Services", "Resources", "Insights", "Contact Us"]');
     expect(page).toContain("drawer-primary-links");
     expect(page).toContain("drawer-secondary-links");

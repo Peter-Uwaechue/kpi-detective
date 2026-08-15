@@ -133,7 +133,7 @@ function DragRail({ children, className = "" }: { children: ReactNode; className
 
 function Header({ dark = false }: { dark?: boolean }) {
   const [open, setOpen] = useState(false); const [, navigate] = useLocation();
-  const primaryDrawerItems = ["Job Search", "For Employers", "Outsourcing", "About Us"];
+  const primaryDrawerItems = ["Home", "Job Search", "For Employers", "Outsourcing", "About Us"];
   const secondaryDrawerItems = ["Industries", "Our Services", "Resources", "Insights", "Contact Us"];
   useEffect(() => { const close = (e: KeyboardEvent) => e.key === "Escape" && setOpen(false); window.addEventListener("keydown", close); return () => window.removeEventListener("keydown", close); }, []);
   return <>
@@ -149,7 +149,7 @@ function Header({ dark = false }: { dark?: boolean }) {
   </>;
 }
 
-function pathFor(item: string) { return `/${item.toLowerCase().replaceAll(" ", "-")}`; }
+function pathFor(item: string) { return item === "Home" ? "/" : `/${item.toLowerCase().replaceAll(" ", "-")}`; }
 function Eyebrow({ children, light = false }: { children: ReactNode; light?: boolean }) { return <p className={`eyebrow ${light ? "eyebrow-light" : ""}`}>{children}</p>; }
 function Button({ href, children, dark = false }: { href: string; children: ReactNode; dark?: boolean }) { const className = `editorial-button ${dark ? "button-dark" : ""}`; const content = <>{children}<ArrowDownRight size={18} /></>; return href.startsWith("#") ? <a href={href} className={className}>{content}</a> : <Link href={href} className={className}>{content}</Link>; }
 function DeferredImage({ src, alt, className }: { src: string; alt: string; className?: string }) { return <img src={src} alt={alt} className={className} loading="lazy" decoding="async" />; }

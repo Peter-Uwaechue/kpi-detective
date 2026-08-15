@@ -14,6 +14,8 @@ describe("compact navigation dropdown", () => {
     expect(page).toContain('aria-controls="site-navigation-menu"');
     expect(page).toContain('id="site-navigation-menu"');
     expect(page).toContain("setOpen((current) => !current)");
+    expect(page).toContain('const primaryDrawerItems = ["Home", "Job Search", "For Employers", "Outsourcing", "About Us"]');
+    expect(page).toContain('item === "Home" ? "/"');
     expect(styles).toContain("top:74px; right:clamp(16px,4vw,64px)");
     expect(styles).toContain("width:min(480px,calc(100vw - 32px))");
     expect(styles).toContain("grid-template-columns:repeat(2,minmax(0,1fr))");

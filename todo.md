@@ -305,3 +305,4 @@
 - [x] Remove the third leadership-card entry so only Remi Abubakar Bello and Funmi Bashorun remain in the carousel; verified desktop/mobile rendering, 38 tests, and production build.
 - [x] Set the two-profile leadership carousel’s automatic interval to two seconds while preserving its controls and motion safeguards; verified the updated interval in regression coverage.
 - [x] Confirm the desktop and mobile leadership sections show only Remi and Funmi, with the existing controls, progress indicators, and card presentation preserved.
+- [x] Ensure the compact mobile menu includes a clear explicit Home destination in addition to the logo link; verified mobile header stability, 38 tests, and production build.
