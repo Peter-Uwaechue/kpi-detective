@@ -39,7 +39,8 @@ describe("footer visual refinement", () => {
     expect(styles).toContain(".footer-operating-hours");
     expect(styles).toContain("color:rgba(249,247,242,.54)");
     expect(styles).toContain('content:"Willers Solutions Limited"');
-    expect(styles).toContain("width:clamp(218px,22vw,254px)");
+    expect(styles).toContain("width:clamp(280px,24vw,340px)");
+    expect(styles).toContain("width:min(310px,100%)");
     expect(styles).toContain("clip-path:inset(0 0 42% 0)");
   });
 });

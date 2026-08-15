@@ -274,3 +274,6 @@
 - [x] Enlarge the approved footer logo so the mark and company name read clearly on mobile and desktop.
 - [x] Preserve the original mark while improving footer-logo contrast and visual clarity.
 - [x] Verify the refined footer logo, test, and deploy the update.
+- [x] Compare the reported Vercel footer view with the current deployment and identify the ineffective logo sizing constraint.
+- [x] Make the actual footer logo visibly larger on mobile and desktop without clipping it.
+- [ ] Verify the corrected logo on the live Vercel site, then test and deploy the fix.
