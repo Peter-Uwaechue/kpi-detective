@@ -26,7 +26,8 @@ describe("footer visual refinement", () => {
     expect(page).toContain('href="https://github.com/Peter-Uwaechue"');
     expect(page).toContain(">September’s Very Own</a>");
     expect(page).not.toContain("Built for better people work.");
-    expect(page).toContain("5b, Samuel Adedoyin, Behind Zenith Headquarters, Victoria Island, Lagos");
+    expect(page).toContain("8, Adebambo Street, Obanikoro, Lagos");
+    expect(page).not.toContain("5b, Samuel Adedoyin, Behind Zenith Headquarters, Victoria Island, Lagos");
     expect(page).toContain("Hours: Mon–Sat, 8:00 AM–6:00 PM");
     expect(styles).toContain(".footer-credit");
     expect(styles).toContain(".footer-contact-detail");

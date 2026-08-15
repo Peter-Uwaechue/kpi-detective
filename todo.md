@@ -252,3 +252,5 @@
 - [x] Verify the official Willers Solutions physical address and operating hours from the current website.
 - [x] Add the verified address and operating hours to the footer contact section.
 - [x] Test, sync, and deploy the footer operating-details update.
+- [x] Remove the Victoria Island address from the footer and use only the approved Obanikoro office address.
+- [x] Verify the corrected address, test, and deploy the footer update.
