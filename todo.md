@@ -234,3 +234,5 @@
 - [x] Document the verified identity requirement in the Vercel deployment guide and sync it to GitHub.
 - [x] Replace the existing Instagram social link with the provided official Willers Solutions Limited profile everywhere it appears.
 - [x] Verify the revised social-link destination, run tests, and deploy the update to GitHub and Vercel.
+- [x] Replace the existing X social link with the provided official Willers Solutions Limited profile everywhere it appears.
+- [x] Verify the revised X link, run tests, and deploy the update to GitHub and Vercel.
