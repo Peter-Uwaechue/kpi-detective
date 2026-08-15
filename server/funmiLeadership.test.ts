@@ -11,7 +11,7 @@ describe("Funmi Bashorun leadership profile", () => {
       readFile(path.join(projectRoot, "client/src/App.tsx"), "utf8"),
     ]);
 
-    expect(source).toContain('leadershipFunmi: publishedAsset("funmi-bashorun-rectangular_ab3c5507.png")');
+    expect(source).toContain('leadershipFunmi: publishedAsset("funmi-bashorun-colour-rectangular_aba3de2d.png")');
     expect(source).toContain('name: "Funmi Bashorun"');
     expect(source).toContain('title: "Energy Markets & Trade Advisor"');
     expect(source).toContain("18+ years in downstream petroleum and regional markets");

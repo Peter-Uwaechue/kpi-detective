@@ -31,7 +31,7 @@ const assets = {
   leadershipTunde: publishedAsset("willers-professional-profile_7955d152.jpeg"),
   leadershipNneka: publishedAsset("willers-local-people-operations_75aefed4.jpg"),
   leadershipRemi: publishedAsset("remi-abubakar-bello-full_f903576c.png"),
-  leadershipFunmi: publishedAsset("funmi-bashorun-rectangular_ab3c5507.png"),
+  leadershipFunmi: publishedAsset("funmi-bashorun-colour-rectangular_aba3de2d.png"),
   wordmarkDark: publishedAsset("willers-wordmark-dark_6d9fc381.svg"),
   wordmarkLight: publishedAsset("willers-wordmark-light_a0f743be.svg"),
   mark: publishedAsset("willers-solutions-limited-logo-transparent-exact_9ea212a2.png"),

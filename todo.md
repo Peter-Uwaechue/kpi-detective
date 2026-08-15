@@ -300,3 +300,5 @@
 - [x] Verify Funmi Bashorun’s original-site portrait and career foundation, then cross-check current public energy-market experience: 18 years in downstream petroleum as of March 2026, focused on trade operations, finance, supply, pricing, crude, oil products, and gas.
 - [x] Confirm desktop and mobile views show Funmi in a rectangular portrait treatment without a circular frame, with her dedicated profile and Remi’s updated 37+ year experience framing rendering correctly.
 - [x] Apply the same subtle, reduced-motion-safe hover and keyboard-focus zoom effect to Funmi Bashorun’s leadership-card portrait; verified desktop framing, 37 tests, and production build.
+- [x] Make Funmi Bashorun’s leadership-card portrait transition from grayscale to full colour on hover, press, and keyboard focus, matching Remi’s interaction behavior; verified source colour, 37 tests, and production build.
+- [x] Confirm Funmi’s dedicated profile now uses a natural full-colour source portrait while the About Us card retains grayscale as its default reveal state.
