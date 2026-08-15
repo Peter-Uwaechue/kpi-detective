@@ -23,7 +23,7 @@ describe("footer visual refinement", () => {
     const styles = await readFile(path.join(projectRoot, "client/src/index.css"), "utf8");
 
     expect(page).toContain("Designed and developed by");
-    expect(page).toContain('href="https://github.com/Peter-Uwaechue"');
+    expect(page).toContain('href="https://peters-portfolio-blond.vercel.app/"');
     expect(page).toContain(">September’s Very Own</a>");
     expect(page).not.toContain("Built for better people work.");
     expect(page).toContain("8, Adebambo Street, Obanikoro, Lagos");

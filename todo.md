@@ -269,3 +269,5 @@
 - [x] Audit website image loading priorities, asset dimensions, and current delivery behaviour.
 - [x] Add responsive image-loading optimisations without changing the approved photography.
 - [x] Test, sync, and deploy the image performance improvements.
+- [x] Replace the September’s Very Own footer credit’s GitHub destination with the supplied portfolio URL.
+- [x] Verify the portfolio destination, test, and deploy the updated footer credit.
