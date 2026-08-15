@@ -271,3 +271,6 @@
 - [x] Test, sync, and deploy the image performance improvements.
 - [x] Replace the September’s Very Own footer credit’s GitHub destination with the supplied portfolio URL.
 - [x] Verify the portfolio destination, test, and deploy the updated footer credit.
+- [x] Enlarge the approved footer logo so the mark and company name read clearly on mobile and desktop.
+- [x] Preserve the original mark while improving footer-logo contrast and visual clarity.
+- [x] Verify the refined footer logo, test, and deploy the update.
