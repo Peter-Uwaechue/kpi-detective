@@ -256,3 +256,5 @@
 - [x] Verify the corrected address, test, and deploy the footer update.
 - [x] Make the Obanikoro footer address open Google Maps directions in a new tab.
 - [x] Verify the accessible directions link, test, and deploy the footer update.
+- [x] Add a small map-pin icon inside the clickable Obanikoro footer address link.
+- [x] Verify the icon treatment, test, and deploy the refined footer location link.
