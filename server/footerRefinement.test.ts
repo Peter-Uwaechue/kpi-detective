@@ -38,9 +38,13 @@ describe("footer visual refinement", () => {
     expect(styles).toContain(".footer-contact-detail svg");
     expect(styles).toContain(".footer-operating-hours");
     expect(styles).toContain("color:rgba(249,247,242,.54)");
-    expect(styles).toContain('content:"Willers Solutions Limited"');
-    expect(styles).toContain("width:clamp(280px,24vw,340px)");
-    expect(styles).toContain("width:min(310px,100%)");
-    expect(styles).toContain("clip-path:inset(0 0 42% 0)");
+    expect(styles).toContain("width:clamp(55px,5vw,70px)");
+    expect(styles).toContain("width:clamp(50px,6.5vw,65px)");
+    expect(styles).toContain("width:clamp(45px,16vw,60px)");
+    expect(styles).toContain("margin:0 0 clamp(48px,4.4vw,64px)");
+    expect(styles).toContain("margin-bottom:clamp(40px,12vw,52px)");
+    expect(styles).toContain(".footer-logo-mark { display:block; width:100%; height:auto; max-width:none; }");
+    expect(styles).not.toContain('content:"Willers Solutions Limited"');
+    expect(styles).not.toContain("clip-path:inset(0 0 42% 0)");
   });
 });
