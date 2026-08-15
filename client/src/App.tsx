@@ -17,9 +17,10 @@ export default function App() {
           <BackToTop />
           <Switch>
             <Route path="/" component={Home} />
-            <Route path="/leadership/hannah-uwaechue" component={Home} />
-            <Route path="/leadership/remi-abubakar-bello" component={Home} />
-            <Route path="/services/:slug" component={Home} />
+          <Route path="/leadership/hannah-uwaechue" component={Home} />
+          <Route path="/leadership/remi-abubakar-bello" component={Home} />
+          <Route path="/leadership/funmi-bashorun" component={Home} />
+          <Route path="/services/:slug" component={Home} />
             <Route path="/:rest*" component={Home} />
           </Switch>
         </TooltipProvider>

@@ -295,3 +295,7 @@
 - [x] Replace Remi Abubakar Bello’s current leadership portrait with the supplied full-resolution image while preserving existing carousel and profile layouts; verified desktop/mobile carousel and profile presentation, 34 tests, and production build.
 - [x] Add a subtle, reduced-motion-safe zoom interaction to Remi Abubakar Bello’s leadership-card portrait; verified desktop/mobile presentation, 35 tests, and production build.
 - [x] Validate Remi’s leadership-card zoom interaction at desktop and mobile breakpoints; it preserves the portrait layout and reduced-motion fallback.
+- [x] Replace Tunde Bello’s carousel placement with Funmi Bashorun, using her original-site portrait in a non-circular rectangular presentation and a refined, source-grounded professional profile; verified desktop/mobile rendering, 36 tests, and production build.
+- [x] Update the experience framing for Remi Abubakar Bello and Funmi Bashorun to reflect time elapsed since the original Willers website biography was published; verified in the leadership carousel and dedicated profile pages.
+- [x] Verify Funmi Bashorun’s original-site portrait and career foundation, then cross-check current public energy-market experience: 18 years in downstream petroleum as of March 2026, focused on trade operations, finance, supply, pricing, crude, oil products, and gas.
+- [x] Confirm desktop and mobile views show Funmi in a rectangular portrait treatment without a circular frame, with her dedicated profile and Remi’s updated 37+ year experience framing rendering correctly.
