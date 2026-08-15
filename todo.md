@@ -241,3 +241,6 @@
 - [x] Inventory every social-media destination used by the footer and mobile navigation.
 - [x] Verify LinkedIn, Instagram, Facebook, X, and TikTok against the official profiles supplied by Willers Solutions.
 - [x] Confirm no social-link discrepancy was identified, so no website correction or deployment was required.
+- [x] Add a subtle “Designed and developed by September’s Very Own” credit to the footer.
+- [x] Link only “September’s Very Own” to the user’s confirmed public GitHub destination.
+- [x] Verify the footer-credit presentation, test, and deploy the update.

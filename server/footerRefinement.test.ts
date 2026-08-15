@@ -14,4 +14,14 @@ describe("footer visual refinement", () => {
     expect(styles).toContain(".footer-links>div");
     expect(styles).toContain(".footer-bottom::before");
   });
+
+  it("includes a restrained linked development credit in the footer", async () => {
+    const page = await readFile(path.join(projectRoot, "client/src/pages/Home.tsx"), "utf8");
+    const styles = await readFile(path.join(projectRoot, "client/src/index.css"), "utf8");
+
+    expect(page).toContain("Designed and developed by");
+    expect(page).toContain('href="https://github.com/Peter-Uwaechue"');
+    expect(page).toContain(">September’s Very Own</a>");
+    expect(styles).toContain(".footer-credit");
+  });
 });
