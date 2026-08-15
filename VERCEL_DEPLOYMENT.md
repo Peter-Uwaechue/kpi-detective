@@ -16,3 +16,16 @@ The public corporate website is configured to deploy as a Vite single-page appli
 ## Updating the Vercel site
 
 Each push to `main` will cause Vercel to build and deploy the latest code automatically. For changes made in Manus, export or push the updated code to this repository, then Vercel will receive the update from GitHub.
+
+### Commit-author requirement for the private repository
+
+Vercel associates GitHub-triggered deployments with the **commit author**. Because this is a private repository, each commit that should deploy must be authored with the verified GitHub email belonging to the connected Vercel team member: `Peter Uwaechue <uwaechuepeter2@gmail.com>`. Do not use a generic automation address such as `noreply@willerssolutions.com` for commits to `main`; Vercel will block that deployment unless that identity is an eligible team member.
+
+The dedicated GitHub working copy is configured with this identity. If the repository is cloned again or commits are created elsewhere, configure it before committing:
+
+```bash
+git config user.name "Peter Uwaechue"
+git config user.email "uwaechuepeter2@gmail.com"
+```
+
+The GitHub account must remain connected in Vercel **Authentication Settings**. The commit does not need GitHub’s signed-commit verification badge; Vercel accepts it when its author resolves to the connected team member.

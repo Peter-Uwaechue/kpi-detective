@@ -224,3 +224,11 @@
 - [x] Compare the current verified project with the connected GitHub working copy.
 - [x] Commit and push any latest website changes to GitHub main.
 - [x] Verify the remote repository commit and report the completed sync.
+- [x] Inspect the connected Vercel project and confirm it is linked to the latest GitHub main branch.
+- [x] Trigger a manual Vercel production redeployment for the latest GitHub commit.
+- [x] Verify the deployment result and report the refreshed production state.
+- [x] Confirm the GitHub identity email associated with the Vercel team member.
+- [x] Create a verified-identity GitHub commit to trigger a valid Vercel production deployment.
+- [x] Verify the deployment status and report any remaining Vercel account action.
+- [ ] Configure the GitHub working copy to use the verified Vercel team-member identity for future commits.
+- [ ] Document the verified identity requirement in the Vercel deployment guide and sync it to GitHub.
