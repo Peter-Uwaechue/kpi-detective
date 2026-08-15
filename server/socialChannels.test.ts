@@ -10,7 +10,7 @@ describe("Willers social channels", () => {
 
     expect(page).toContain('className="footer-social"');
     expect(page).toContain("https://ng.linkedin.com/company/willers-talents-limited");
-    expect(page).toContain("https://www.instagram.com/jobs_willers/");
+    expect(page).toContain("https://www.instagram.com/willerssolutionlimited/");
     expect(page).toContain("https://www.facebook.com/Willers-Solutions-Limited-1037677022974258");
     expect(page).toContain("https://twitter.com/WillersSolution");
     expect(page).toContain("https://www.tiktok.com/@willerssl");

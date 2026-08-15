@@ -230,5 +230,7 @@
 - [x] Confirm the GitHub identity email associated with the Vercel team member.
 - [x] Create a verified-identity GitHub commit to trigger a valid Vercel production deployment.
 - [x] Verify the deployment status and report any remaining Vercel account action.
-- [ ] Configure the GitHub working copy to use the verified Vercel team-member identity for future commits.
-- [ ] Document the verified identity requirement in the Vercel deployment guide and sync it to GitHub.
+- [x] Configure the GitHub working copy to use the verified Vercel team-member identity for future commits.
+- [x] Document the verified identity requirement in the Vercel deployment guide and sync it to GitHub.
+- [x] Replace the existing Instagram social link with the provided official Willers Solutions Limited profile everywhere it appears.
+- [x] Verify the revised social-link destination, run tests, and deploy the update to GitHub and Vercel.
