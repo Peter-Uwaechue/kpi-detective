@@ -289,3 +289,6 @@
 - [x] Create a mobile-only compact footer with collapsible Explore and Connect groups, condensed contact rows and social controls, and a slim bottom bar while preserving desktop; verified responsive rendering, 33 tests, and production build.
 - [x] Confirm the mobile footer opens compactly with disclosures closed by default, while the desktop footer remains expanded and structurally unchanged.
 - [x] Add a smooth, reduced-motion-safe slide transition to the compact mobile Explore and Connect disclosures; verified client console, responsive closed state, 33 tests, and production build.
+- [x] Add Remi Abubakar Bello’s original-site portrait and a source-grounded, expanded professional leadership profile at the existing Hannah presentation size; replace Hannah’s carousel position while retaining her dedicated profile, and verify desktop/mobile rendering, 34 tests, and production build.
+- [x] Verify the original-site 296×300 portrait and source biography: 27+ years in oil and gas at the 2016 publication date, including 15 years with ExxonMobil, Chemical Engineering education, NSE/SPE/COREN credentials, and advisory/governance experience.
+- [x] Repair and verify the dedicated Remi route after explicit nested-route registration; the original portrait, expanded biography, and enquiry form now render correctly.

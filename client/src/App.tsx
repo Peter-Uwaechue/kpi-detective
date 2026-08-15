@@ -18,6 +18,7 @@ export default function App() {
           <Switch>
             <Route path="/" component={Home} />
             <Route path="/leadership/hannah-uwaechue" component={Home} />
+            <Route path="/leadership/remi-abubakar-bello" component={Home} />
             <Route path="/services/:slug" component={Home} />
             <Route path="/:rest*" component={Home} />
           </Switch>
