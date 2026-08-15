@@ -13,6 +13,9 @@ describe("footer visual refinement", () => {
     expect(styles).toContain("border-left:2px solid #99e6ff");
     expect(styles).toContain(".footer-links>div");
     expect(styles).toContain(".footer-bottom::before");
+    expect(styles).toContain(".footer-social a svg");
+    expect(styles).toContain("rotate(-5deg)");
+    expect(styles).toContain(".footer-social a:active");
   });
 
   it("includes a restrained linked development credit in the footer", async () => {

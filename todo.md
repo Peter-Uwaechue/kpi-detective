@@ -247,3 +247,5 @@
 - [x] Remove the “Built for better people work” text from the footer.
 - [x] Reduce the visual prominence of the September’s Very Own credit while preserving a clear accessible link.
 - [x] Verify the refined footer on desktop and mobile, then test and deploy the update.
+- [x] Add subtle hover and keyboard-focus animations to the footer social-media icons.
+- [x] Preserve reduced-motion support, then test and deploy the footer social-icon interaction.
