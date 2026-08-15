@@ -258,3 +258,6 @@
 - [x] Verify the accessible directions link, test, and deploy the footer update.
 - [x] Add a small map-pin icon inside the clickable Obanikoro footer address link.
 - [x] Verify the icon treatment, test, and deploy the refined footer location link.
+- [x] Locate the “Discuss your outsourcing needs” call-to-action and identify why it is inactive.
+- [x] Connect the outsourcing call-to-action to the appropriate enquiry route.
+- [x] Test, sync, and deploy the repaired outsourcing call-to-action.

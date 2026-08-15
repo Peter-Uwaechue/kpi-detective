@@ -107,8 +107,8 @@ export default function ScrollManager() {
       }
       if (isInternal && (destination.pathname !== window.location.pathname || destination.search !== window.location.search)) linkNavigation.current = true;
     };
-    document.addEventListener("click", handleAnchorClick);
-    return () => document.removeEventListener("click", handleAnchorClick);
+    document.addEventListener("click", handleAnchorClick, true);
+    return () => document.removeEventListener("click", handleAnchorClick, true);
   }, []);
 
   return null;

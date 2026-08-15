@@ -16,5 +16,7 @@ describe("global scroll manager", () => {
     expect(source).toContain("window.scrollTo({ top: saved.y, left: saved.x, behavior: \"auto\" })");
     expect(source).toContain("linkNavigation.current = true");
     expect(source).toContain("sameDocument && destination.hash");
+    expect(source).toContain('document.addEventListener("click", handleAnchorClick, true)');
+    expect(source).toContain('document.removeEventListener("click", handleAnchorClick, true)');
   });
 });

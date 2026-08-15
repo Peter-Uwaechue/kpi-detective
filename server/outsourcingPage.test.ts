@@ -22,6 +22,8 @@ describe("outsourcing page", () => {
     expect(page).toContain("Estimated scope");
     expect(page).toContain("Project or contract support");
     expect(page).toContain('href="/outsourcing"');
+    expect(page).toContain('<a href="#outsourcing-enquiry" className="text-link">Discuss your outsourcing need');
+    expect(page).toContain('return href.startsWith("#") ? <a href={href} className={className}>{content}</a>');
     expect(styles).toContain(".outsourcing-enquiry");
     expect(styles).toContain(".outsourcing-form-grid");
     expect(styles).toContain(".outsourcing-hero");
