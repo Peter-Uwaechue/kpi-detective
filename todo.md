@@ -281,3 +281,5 @@
 - [x] Verify the connected Vercel deployment for the latest footer-only logo refinement and resolve any deployment delay or failure; commit b7ade99 is READY in production.
 - [x] Increase the mobile footer logo’s visual presence, reduce its gap to the existing footer statement, and tighten only the Explore link rhythm; verified responsive rendering, 33 tests, and production build.
 - [x] Confirm the mobile-scoped footer refinement leaves the existing desktop footer presentation unchanged.
+- [x] Repair the footer logo container so the full original mark renders without clipping, at an appropriate 40–56 px desktop height and responsive mobile scale, with a 24–32 px gap to the existing tagline; verified desktop/mobile renders, 33 tests, and production build.
+- [x] Confirm desktop and mobile renders show the full blue-and-orange footer mark without container clipping, aligned to the existing footer grid.
