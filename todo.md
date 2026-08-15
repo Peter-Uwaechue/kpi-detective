@@ -293,3 +293,5 @@
 - [x] Verify the original-site 296×300 portrait and source biography: 27+ years in oil and gas at the 2016 publication date, including 15 years with ExxonMobil, Chemical Engineering education, NSE/SPE/COREN credentials, and advisory/governance experience.
 - [x] Repair and verify the dedicated Remi route after explicit nested-route registration; the original portrait, expanded biography, and enquiry form now render correctly.
 - [x] Replace Remi Abubakar Bello’s current leadership portrait with the supplied full-resolution image while preserving existing carousel and profile layouts; verified desktop/mobile carousel and profile presentation, 34 tests, and production build.
+- [x] Add a subtle, reduced-motion-safe zoom interaction to Remi Abubakar Bello’s leadership-card portrait; verified desktop/mobile presentation, 35 tests, and production build.
+- [x] Validate Remi’s leadership-card zoom interaction at desktop and mobile breakpoints; it preserves the portrait layout and reduced-motion fallback.
