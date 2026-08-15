@@ -54,5 +54,14 @@ describe("footer visual refinement", () => {
     expect(styles).toContain(".footer-intro { margin:0; }");
     expect(styles).not.toContain('content:"Willers Solutions Limited"');
     expect(styles).not.toContain("clip-path:inset(0 0 42% 0)");
+    expect(page).toContain('className="footer-disclosure footer-explore"');
+    expect(page).toContain('className="footer-disclosure footer-connect"');
+    expect(page).toContain('const [compactFooter, setCompactFooter] = useState(false)');
+    expect(page).toContain('window.matchMedia("(max-width: 640px)")');
+    expect(page).toContain('className="footer-contact-compact"');
+    expect(styles).toContain("@media (max-width:640px)");
+    expect(styles).toContain(".footer-disclosure:not([open]) .footer-disclosure-content { display:none; }");
+    expect(styles).toContain("width:40px; height:40px");
+    expect(styles).toContain("font-size:12px; line-height:1.3");
   });
 });
