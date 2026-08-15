@@ -302,3 +302,6 @@
 - [x] Apply the same subtle, reduced-motion-safe hover and keyboard-focus zoom effect to Funmi Bashorun’s leadership-card portrait; verified desktop framing, 37 tests, and production build.
 - [x] Make Funmi Bashorun’s leadership-card portrait transition from grayscale to full colour on hover, press, and keyboard focus, matching Remi’s interaction behavior; verified source colour, 37 tests, and production build.
 - [x] Confirm Funmi’s dedicated profile now uses a natural full-colour source portrait while the About Us card retains grayscale as its default reveal state.
+- [x] Remove the third leadership-card entry so only Remi Abubakar Bello and Funmi Bashorun remain in the carousel; verified desktop/mobile rendering, 38 tests, and production build.
+- [x] Set the two-profile leadership carousel’s automatic interval to two seconds while preserving its controls and motion safeguards; verified the updated interval in regression coverage.
+- [x] Confirm the desktop and mobile leadership sections show only Remi and Funmi, with the existing controls, progress indicators, and card presentation preserved.

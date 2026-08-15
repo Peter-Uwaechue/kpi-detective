@@ -107,7 +107,6 @@ const funmiProfile = {
 const leadershipCarousel = [
   { name: remiProfile.name, title: remiProfile.title, image: remiProfile.image, position: "center center", profile: "/leadership/remi-abubakar-bello", linkedinSearch: "" },
   { name: funmiProfile.name, title: funmiProfile.title, image: funmiProfile.image, position: "center 31%", profile: "/leadership/funmi-bashorun", linkedinSearch: "" },
-  { name: "Nneka Eze", title: "Principal, Leadership Assessment", image: assets.leadershipNneka, position: "96% center", profile: "", linkedinSearch: "https://www.linkedin.com/search/results/people/?keywords=Nneka%20Eze" },
 ];
 const stateListingCounts = jobs.reduce<Record<string, number>>((counts, job) => {
   counts[job.locationGroup] = (counts[job.locationGroup] ?? 0) + 1;
@@ -505,7 +504,7 @@ function LeadershipCarousel() {
   }, []);
   useEffect(() => {
     if (paused || reducedMotion) return;
-    const timer = window.setInterval(() => setActive((current) => (current + 1) % leadershipCarousel.length), 3000);
+    const timer = window.setInterval(() => setActive((current) => (current + 1) % leadershipCarousel.length), 2000);
     return () => window.clearInterval(timer);
   }, [paused, reducedMotion]);
   useEffect(() => {
