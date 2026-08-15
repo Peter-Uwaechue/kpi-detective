@@ -264,3 +264,5 @@
 - [x] Audit site-wide buttons and links for hit-area, stacking, pointer-event, and routing problems that require repeated clicks.
 - [x] Ensure the full visible surface of editorial buttons and calls to action is immediately clickable and keyboard accessible.
 - [x] Test representative desktop and mobile actions, then sync and deploy the interaction repair.
+- [x] Replace the slim “Discuss your outsourcing need” text link with a clear full-surface CTA.
+- [x] Confirm the improved outsourcing CTA responds on a single tap or click, then test and deploy it.
