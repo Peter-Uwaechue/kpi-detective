@@ -299,3 +299,4 @@
 - [x] Update the experience framing for Remi Abubakar Bello and Funmi Bashorun to reflect time elapsed since the original Willers website biography was published; verified in the leadership carousel and dedicated profile pages.
 - [x] Verify Funmi Bashorun’s original-site portrait and career foundation, then cross-check current public energy-market experience: 18 years in downstream petroleum as of March 2026, focused on trade operations, finance, supply, pricing, crude, oil products, and gas.
 - [x] Confirm desktop and mobile views show Funmi in a rectangular portrait treatment without a circular frame, with her dedicated profile and Remi’s updated 37+ year experience framing rendering correctly.
+- [x] Apply the same subtle, reduced-motion-safe hover and keyboard-focus zoom effect to Funmi Bashorun’s leadership-card portrait; verified desktop framing, 37 tests, and production build.
