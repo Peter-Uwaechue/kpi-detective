@@ -288,3 +288,4 @@
 - [x] Confirm mobile and desktop renders preserve a left-aligned mark-and-wordmark lockup with a visibly separated, higher-contrast wordmark above the existing tagline.
 - [x] Create a mobile-only compact footer with collapsible Explore and Connect groups, condensed contact rows and social controls, and a slim bottom bar while preserving desktop; verified responsive rendering, 33 tests, and production build.
 - [x] Confirm the mobile footer opens compactly with disclosures closed by default, while the desktop footer remains expanded and structurally unchanged.
+- [x] Add a smooth, reduced-motion-safe slide transition to the compact mobile Explore and Connect disclosures; verified client console, responsive closed state, 33 tests, and production build.
