@@ -278,3 +278,6 @@
 - [x] Make the actual footer logo visibly larger on mobile and desktop without clipping it.
 - [x] Verify the corrected logo on the live Vercel site, then test and deploy the fix.
 - [x] Refine only the footer logo’s left alignment, understated responsive scale, and controlled spacing above the existing footer statement; verified desktop/mobile rendering, 33 tests, and production build.
+- [x] Verify the connected Vercel deployment for the latest footer-only logo refinement and resolve any deployment delay or failure; commit b7ade99 is READY in production.
+- [x] Increase the mobile footer logo’s visual presence, reduce its gap to the existing footer statement, and tighten only the Explore link rhythm; verified responsive rendering, 33 tests, and production build.
+- [x] Confirm the mobile-scoped footer refinement leaves the existing desktop footer presentation unchanged.

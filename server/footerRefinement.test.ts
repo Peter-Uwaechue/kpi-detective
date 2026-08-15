@@ -40,9 +40,10 @@ describe("footer visual refinement", () => {
     expect(styles).toContain("color:rgba(249,247,242,.54)");
     expect(styles).toContain("width:clamp(55px,5vw,70px)");
     expect(styles).toContain("width:clamp(50px,6.5vw,65px)");
-    expect(styles).toContain("width:clamp(45px,16vw,60px)");
+    expect(styles).toContain("width:clamp(72px,22vw,88px)");
     expect(styles).toContain("margin:0 0 clamp(48px,4.4vw,64px)");
-    expect(styles).toContain("margin-bottom:clamp(40px,12vw,52px)");
+    expect(styles).toContain("margin-bottom:clamp(28px,8vw,36px)");
+    expect(styles).toContain(".footer-links>div:first-child { gap:8px; }");
     expect(styles).toContain(".footer-logo-mark { display:block; width:100%; height:auto; max-width:none; }");
     expect(styles).not.toContain('content:"Willers Solutions Limited"');
     expect(styles).not.toContain("clip-path:inset(0 0 42% 0)");
