@@ -26,7 +26,11 @@ describe("footer visual refinement", () => {
     expect(page).toContain('href="https://github.com/Peter-Uwaechue"');
     expect(page).toContain(">September’s Very Own</a>");
     expect(page).not.toContain("Built for better people work.");
+    expect(page).toContain("5b, Samuel Adedoyin, Behind Zenith Headquarters, Victoria Island, Lagos");
+    expect(page).toContain("Hours: Mon–Sat, 8:00 AM–6:00 PM");
     expect(styles).toContain(".footer-credit");
+    expect(styles).toContain(".footer-contact-detail");
+    expect(styles).toContain(".footer-operating-hours");
     expect(styles).toContain("color:rgba(249,247,242,.54)");
   });
 });

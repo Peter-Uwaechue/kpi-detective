@@ -249,3 +249,6 @@
 - [x] Verify the refined footer on desktop and mobile, then test and deploy the update.
 - [x] Add subtle hover and keyboard-focus animations to the footer social-media icons.
 - [x] Preserve reduced-motion support, then test and deploy the footer social-icon interaction.
+- [x] Verify the official Willers Solutions physical address and operating hours from the current website.
+- [x] Add the verified address and operating hours to the footer contact section.
+- [x] Test, sync, and deploy the footer operating-details update.
