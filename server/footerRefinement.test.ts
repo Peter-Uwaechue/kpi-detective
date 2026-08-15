@@ -22,6 +22,8 @@ describe("footer visual refinement", () => {
     expect(page).toContain("Designed and developed by");
     expect(page).toContain('href="https://github.com/Peter-Uwaechue"');
     expect(page).toContain(">September’s Very Own</a>");
+    expect(page).not.toContain("Built for better people work.");
     expect(styles).toContain(".footer-credit");
+    expect(styles).toContain("color:rgba(249,247,242,.54)");
   });
 });
