@@ -30,7 +30,7 @@ const assets = {
   outsourcingPrinciples: publishedAsset("willers-lagos-strategy-session_878ac484.jpeg"),
   leadershipTunde: publishedAsset("willers-professional-profile_7955d152.jpeg"),
   leadershipNneka: publishedAsset("willers-local-people-operations_75aefed4.jpg"),
-  leadershipRemi: publishedAsset("remi-abubakar-bello-original_3154c764.png"),
+  leadershipRemi: publishedAsset("remi-abubakar-bello-full_f903576c.png"),
   wordmarkDark: publishedAsset("willers-wordmark-dark_6d9fc381.svg"),
   wordmarkLight: publishedAsset("willers-wordmark-light_a0f743be.svg"),
   mark: publishedAsset("willers-solutions-limited-logo-transparent-exact_9ea212a2.png"),

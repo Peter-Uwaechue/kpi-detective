@@ -11,7 +11,7 @@ describe("Remi Abubakar Bello leadership profile", () => {
       readFile(path.join(projectRoot, "client/src/App.tsx"), "utf8"),
     ]);
 
-    expect(source).toContain('leadershipRemi: publishedAsset("remi-abubakar-bello-original_3154c764.png")');
+    expect(source).toContain('leadershipRemi: publishedAsset("remi-abubakar-bello-full_f903576c.png")');
     expect(source).toContain('name: "Remi Abubakar Bello"');
     expect(source).toContain('title: "Senior Energy & Operations Advisor"');
     expect(source).toContain("15 years with ExxonMobil");
