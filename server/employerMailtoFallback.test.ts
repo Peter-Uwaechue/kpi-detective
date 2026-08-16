@@ -34,4 +34,9 @@ describe("employer partnership mailto fallback", () => {
     expect(homePageSource).toContain("Your email draft is ready. Please press Send in your email app to complete your request.");
     expect(homePageSource).not.toContain("deliver the completed brief to ${employerContactEmail}");
   });
+
+  it("gives visitors a private fallback when no default email app is configured", () => {
+    expect(homePageSource).toContain("No email app opened?");
+    expect(homePageSource).toContain("Set up a default email app in your device settings");
+  });
 });

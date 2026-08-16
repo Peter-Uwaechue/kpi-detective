@@ -310,3 +310,4 @@
 - [x] Route all employer-partnership form submissions and their completed form details to humancapital@willerssolutions.com through the visitor email-app fallback; verified mobile form presentation, 36 test files / 40 tests, and production build.
 - [x] Correct the employer-form mailto payload so email clients receive real line breaks rather than literal backslash-n characters; verified with 42 tests and a production build.
 - [x] Replace the public Human Capital email address on the employer success page with a private, clear next-step confirmation; verified with 42 tests and a production build.
+- [x] Add a clear fallback instruction for employer-form visitors whose device has no default email app configured; verified with 43 tests, a production build, and mobile form review.
