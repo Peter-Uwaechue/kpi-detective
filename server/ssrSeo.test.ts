@@ -1,6 +1,9 @@
 import { describe, expect, it } from "vitest";
 import { render } from "../client/src/entry-server";
 import { getRouteMeta, SITE_NAME } from "../shared/seo";
+import fs from "node:fs";
+
+const homePageSource = fs.readFileSync(new URL("../client/src/pages/Home.tsx", import.meta.url), "utf8");
 
 describe("SSR route metadata", () => {
   it("provides a canonical, indexable home-page description", () => {
@@ -36,6 +39,9 @@ describe("SSR public rendering", () => {
     expect(result.html).toContain("Share Enterprise Sales Executive on LinkedIn");
     expect(result.html).toContain("Share Enterprise Sales Executive on X");
     expect(result.html).toContain("Share Enterprise Sales Executive on WhatsApp");
+    expect(result.html).toContain("Copy the Enterprise Sales Executive vacancy link");
+    expect(homePageSource).toContain('toast.success("Vacancy link copied")');
+    expect(homePageSource).toContain('toast.error("Unable to copy the vacancy link")');
   });
 
   it("renders the dedicated employer enquiry form without browser globals", async () => {

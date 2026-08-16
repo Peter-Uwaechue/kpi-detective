@@ -492,7 +492,26 @@ function JobDetailShare({ job }: { job: Job }) {
   const linkedInHref = `https://www.linkedin.com/sharing/share-offsite/?url=${encodeURIComponent(jobUrl)}`;
   const xHref = `https://x.com/intent/post?text=${encodeURIComponent(`${message} ${jobUrl}`)}`;
   const whatsAppHref = `https://wa.me/?text=${encodeURIComponent(`${message} ${jobUrl}`)}`;
-  return <div className="job-detail-share" aria-label={`Share the ${job.title} vacancy`}><Eyebrow>SHARE THIS ROLE</Eyebrow><div><a href={linkedInHref} target="_blank" rel="noopener noreferrer" aria-label={`Share ${job.title} on LinkedIn`}><Linkedin size={16} /><span>LinkedIn</span></a><a href={xHref} target="_blank" rel="noopener noreferrer" aria-label={`Share ${job.title} on X`}><span className="x-share-mark" aria-hidden="true">𝕏</span><span>X</span></a><a href={whatsAppHref} target="_blank" rel="noopener noreferrer" aria-label={`Share ${job.title} on WhatsApp`}><MessageCircle size={16} /><span>WhatsApp</span></a></div></div>;
+  const copyLink = async () => {
+    try {
+      if (navigator.clipboard?.writeText) await navigator.clipboard.writeText(jobUrl);
+      else {
+        const input = document.createElement("textarea");
+        input.value = jobUrl;
+        input.style.position = "fixed";
+        input.style.opacity = "0";
+        document.body.appendChild(input);
+        input.select();
+        const copied = document.execCommand("copy");
+        document.body.removeChild(input);
+        if (!copied) throw new Error("Copy command was unavailable");
+      }
+      toast.success("Vacancy link copied");
+    } catch {
+      toast.error("Unable to copy the vacancy link");
+    }
+  };
+  return <div className="job-detail-share" aria-label={`Share the ${job.title} vacancy`}><Eyebrow>SHARE THIS ROLE</Eyebrow><div><a href={linkedInHref} target="_blank" rel="noopener noreferrer" aria-label={`Share ${job.title} on LinkedIn`}><Linkedin size={16} /><span>LinkedIn</span></a><a href={xHref} target="_blank" rel="noopener noreferrer" aria-label={`Share ${job.title} on X`}><span className="x-share-mark" aria-hidden="true">𝕏</span><span>X</span></a><a href={whatsAppHref} target="_blank" rel="noopener noreferrer" aria-label={`Share ${job.title} on WhatsApp`}><MessageCircle size={16} /><span>WhatsApp</span></a><button type="button" onClick={copyLink} aria-label={`Copy the ${job.title} vacancy link`}><Copy size={16} /><span>Copy link</span></button></div></div>;
 }
 function JobDetails() {
   const search = useSearch();
