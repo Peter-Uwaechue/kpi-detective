@@ -54,7 +54,9 @@ import "./KPIDetective.css";
 
 type Stage = "upload" | "cleaning" | "review" | "results";
 type ChatMessage = { id: string; role: "assistant" | "user"; text: string; confidence?: number; generated?: boolean };
-type HistoryEntry = { id: string; at: string; metric: string; changePercent: number; summary: string };
+type HistoryEntry = { id: string; at: string; metric: string; changePercent: number; summary: string; currentTotal?: number; previousTotal?: number; currentPeriod?: string; primaryCause?: string; primaryDimension?: string };
+type BenchmarkInsight = { average: number; current: number; deltaPercent: number };
+type PatternInsight = { cause: string; previousDate: string; previousChange: number } | null;
 
 const stageDetails: Record<Exclude<Stage, "results">, { step: string; label: string }> = {
   upload: { step: "01", label: "Upload data" },
@@ -233,23 +235,59 @@ export default function KPIDetective() {
       setAnalysis(result);
       setStage("results");
       setShowData(false);
-      const entry: HistoryEntry = { id: `${Date.now()}`, at: new Date().toISOString(), metric: result.metricLabel, changePercent: result.changePercent, summary: result.summary };
-      const next = [entry, ...history].slice(0, 5);
+      const primaryCause = result.causes[0];
+      const entry: HistoryEntry = {
+        id: `${Date.now()}`,
+        at: new Date().toISOString(),
+        metric: result.metricLabel,
+        changePercent: result.changePercent,
+        summary: result.summary,
+        currentTotal: result.currentTotal,
+        previousTotal: result.previousTotal,
+        currentPeriod: result.currentPeriod,
+        primaryCause: primaryCause?.value,
+        primaryDimension: primaryCause?.dimension,
+      };
+      const next = [entry, ...history].slice(0, 10);
       setHistory(next);
       localStorage.setItem("kpi-detective-history", JSON.stringify(next));
     } catch (reason) { setError(reason instanceof Error ? reason.message : "We could not complete the investigation."); }
   };
 
   const chartData = useMemo(() => analysis?.causes.map(cause => ({ name: `${cause.dimension}: ${cause.value}`, impact: cause.impact })) ?? [], [analysis]);
+  const benchmark = useMemo<BenchmarkInsight | null>(() => {
+    if (!analysis) return null;
+    const prior = history.filter(item => item.metric === analysis.metricLabel && typeof item.currentTotal === "number");
+    if (!prior.length) return null;
+    const average = prior.reduce((sum, item) => sum + (item.currentTotal ?? 0), 0) / prior.length;
+    return { average, current: analysis.currentTotal, deltaPercent: average ? ((analysis.currentTotal - average) / average) * 100 : 0 };
+  }, [analysis, history]);
+  const recurringPattern = useMemo<PatternInsight>(() => {
+    if (!analysis?.causes[0]) return null;
+    const match = history.find(item => item.metric === analysis.metricLabel && item.primaryCause === analysis.causes[0].value && item.currentPeriod !== analysis.currentPeriod);
+    return match && match.currentPeriod ? { cause: `${match.primaryDimension ?? "Driver"}: ${match.primaryCause}`, previousDate: match.currentPeriod, previousChange: match.changePercent } : null;
+  }, [analysis, history]);
+  const downloadReport = () => {
+    if (!analysis) return;
+    const causeRows = analysis.causes.map(cause => `<li><strong>${cause.dimension}: ${cause.value}</strong> — ${signedCurrency(cause.impact, analysis.currencySymbol)} impact; ${cause.confidence}% confidence; counterfactual ${currency(cause.counterfactual, analysis.currencySymbol)}.</li>`).join("");
+    const html = `<!doctype html><html><head><meta charset="utf-8"><title>KPI Detective report — ${analysis.metricLabel}</title><style>body{font:16px Arial,sans-serif;max-width:760px;margin:48px auto;color:#173142;line-height:1.6}h1{font-size:38px}h2{margin-top:32px}strong{color:#116f61}.meta{color:#64747b}li{margin:12px 0}</style></head><body><p class="meta">KPI Detective · ${readablePeriod(analysis.previousPeriod)} → ${readablePeriod(analysis.currentPeriod)}</p><h1>${analysis.metricLabel}: ${currency(analysis.currentTotal, analysis.currencySymbol)}</h1><p><strong>${analysis.changePercent.toFixed(1)}%</strong> change from ${currency(analysis.previousTotal, analysis.currencySymbol)}.</p><h2>What changed</h2><p>${analysis.summary}</p><h2>Priority causes</h2><ul>${causeRows}</ul><h2>Data quality</h2><p>${analysis.totalRowsUsed} usable rows; ${analysis.confidence}% calculated confidence.</p></body></html>`;
+    const url = URL.createObjectURL(new Blob([html], { type: "text/html" }));
+    const anchor = document.createElement("a");
+    anchor.href = url;
+    anchor.download = `kpi-detective-${analysis.metricLabel.toLowerCase().replace(/\\W+/g, "-")}-report.html`;
+    anchor.click();
+    URL.revokeObjectURL(url);
+  };
   const closeTour = () => { setOnboarding(false); sessionStorage.setItem("kpi-detective-tour-dismissed", "true"); };
 
   if (stage === "results" && analysis && dataset) return <main className={`kpi-app ${dark ? "dark-mode" : ""}`}>
-    <header className="app-header dashboard-header"><button className="brand-button" onClick={() => { setStage("upload"); setAnalysis(null); }}><Logo /></button><div className="dashboard-header-actions"><span className="analysis-date"><ClipboardCheck size={15} />Analysis complete</span><button className="icon-button" aria-label="Toggle colour theme" onClick={() => setDark(current => !current)}>{dark ? <Moon size={18} /> : <Moon size={18} />}</button><button className="outline-action" onClick={() => window.print()}><Download size={16} />Export report</button><button className="primary-action" onClick={() => { setStage("upload"); setAnalysis(null); }}><UploadCloud size={16} />New analysis</button></div></header>
+    <header className="app-header dashboard-header"><button className="brand-button" onClick={() => { setStage("upload"); setAnalysis(null); }}><Logo /></button><div className="dashboard-header-actions"><span className="analysis-date"><ClipboardCheck size={15} />Analysis complete</span><button className="icon-button" aria-label="Toggle colour theme" onClick={() => setDark(current => !current)}>{dark ? <Moon size={18} /> : <Moon size={18} />}</button><button className="outline-action" onClick={downloadReport}><Download size={16} />Download report</button><button className="secondary-action print-action" onClick={() => window.print()}>Print / PDF</button><button className="primary-action" onClick={() => { setStage("upload"); setAnalysis(null); }}><UploadCloud size={16} />New analysis</button></div></header>
     <div className="dashboard-shell">
       <aside className="dashboard-sidebar"><div className="sidebar-title">Analysis</div><button className="sidebar-link active"><PanelTop size={17} />Overview</button><button className="sidebar-link" onClick={() => setShowData(true)}><TableProperties size={17} />Cleaned data</button><div className="sidebar-bottom"><div className="sidebar-title">Recent</div>{history.slice(0, 3).map(item => <button className="history-item" key={item.id} title={item.summary}><History size={14} /><span>{item.metric}<small>{new Date(item.at).toLocaleDateString(undefined, { month: "short", day: "numeric" })}</small></span><b className={item.changePercent >= 0 ? "positive" : "negative"}>{changeText(item.changePercent)}</b></button>)}<Link href="/kpi-detective" className="back-site"><ArrowLeft size={15} />KPI Detective</Link></div></aside>
       <div className="dashboard-content"><section className="results-kicker"><div><span className="eyebrow">{readablePeriod(analysis.previousPeriod)} → {readablePeriod(analysis.currentPeriod)}</span><h1>Here’s what changed.</h1></div><MetricPill label="Data quality" value={`${analysis.totalRowsUsed} usable rows`} tone="positive" /></section>
         <section className={`hero-kpi ${analysis.change < 0 ? "is-decline" : "is-growth"}`}><div className="hero-kpi-copy"><span className="eyebrow light">Headline KPI · {analysis.metricLabel}</span><div className="hero-number"><strong>{currency(analysis.currentTotal, analysis.currencySymbol)}</strong><span>{analysis.change < 0 ? "↓" : "↑"} {Math.abs(analysis.changePercent).toFixed(1)}%</span></div><p>from {currency(analysis.previousTotal, analysis.currencySymbol)} in {readablePeriod(analysis.previousPeriod)}</p></div><div className="hero-kpi-visual"><div className="hero-confidence"><ConfidenceRing value={analysis.confidence} /><p>confidence in the primary explanation</p></div><div className="hero-mini-chart"><ResponsiveContainer width="100%" height={140}><AreaChart data={analysis.trend} margin={{ top: 8, right: 0, bottom: 0, left: 0 }}><defs><linearGradient id="hero-trend" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stopColor="#b9f3dd" stopOpacity=".7"/><stop offset="100%" stopColor="#b9f3dd" stopOpacity="0"/></linearGradient></defs><Area type="monotone" dataKey="total" stroke="#b9f3dd" strokeWidth={2.5} fill="url(#hero-trend)" /><Tooltip formatter={(value: number) => currency(value, analysis.currencySymbol)} labelFormatter={label => readablePeriod(String(label))} contentStyle={{ background: "#0e2434", border: "1px solid #416372", borderRadius: 10 }} /></AreaChart></ResponsiveContainer></div></div></section>
         <section className="explanation-panel"><div className="explanation-symbol"><Sparkles size={20} /></div><div><span className="eyebrow">The explanation</span><p>{analysis.summary}</p></div><button onClick={() => document.getElementById("drivers")?.scrollIntoView({ behavior: "smooth" })}>See drivers <ArrowRight size={16} /></button></section>
+        <section className="insight-grid">{benchmark && <article className="insight-card"><span className="eyebrow">Historical benchmark</span><h2>{currency(benchmark.current, analysis.currencySymbol)}</h2><p>Your current KPI is {Math.abs(benchmark.deltaPercent).toFixed(1)}% {benchmark.deltaPercent >= 0 ? "above" : "below"} the average of {currency(benchmark.average, analysis.currencySymbol)} across {history.filter(item => item.metric === analysis.metricLabel && typeof item.currentTotal === "number").length} saved analyses.</p></article>}{recurringPattern && <article className="insight-card pattern-card"><span className="eyebrow">Recurring pattern detected</span><h2>{recurringPattern.cause}</h2><p>This looks similar to your saved {recurringPattern.previousDate} analysis, when the KPI changed by {changeText(recurringPattern.previousChange)}.</p></article>}<article className="insight-card"><span className="eyebrow">Analysis history</span><h2>{history.length} saved investigations</h2><p>Analyses are saved in this browser so you can compare future changes with earlier findings.</p></article></section>
         <section className="dashboard-grid"><article className="chart-card trend-card"><div className="card-heading"><div><span className="eyebrow">KPI trend</span><h2>Performance over time</h2></div><span>{analysis.trend.length} months</span></div><div className="chart-area"><ResponsiveContainer width="100%" height={250}><AreaChart data={analysis.trend} margin={{ top: 10, right: 12, bottom: 0, left: -14 }}><defs><linearGradient id="main-trend" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stopColor="#4ba991" stopOpacity=".34"/><stop offset="100%" stopColor="#4ba991" stopOpacity="0"/></linearGradient></defs><CartesianGrid vertical={false} stroke="#e8eceb"/><XAxis dataKey="period" tickFormatter={label => readablePeriod(String(label)).split(" ")[0]} axisLine={false} tickLine={false} tick={{ fill: "#71808c", fontSize: 11 }} /><YAxis tickFormatter={value => currency(value, analysis.currencySymbol)} axisLine={false} tickLine={false} tick={{ fill: "#71808c", fontSize: 11 }} width={70}/><Tooltip formatter={(value: number) => currency(value, analysis.currencySymbol)} labelFormatter={label => readablePeriod(String(label))} cursor={{ stroke: "#9bb2ac", strokeDasharray: "3 4" }} contentStyle={{ border: "1px solid #dbe3e0", borderRadius: 12, boxShadow: "0 10px 30px rgba(19,43,51,.12)" }} /><Area type="monotone" dataKey="total" stroke="#1b8370" strokeWidth={2.5} fill="url(#main-trend)"/></AreaChart></ResponsiveContainer></div></article>
           <article className="chart-card drivers-card" id="drivers"><div className="card-heading"><div><span className="eyebrow">Contribution analysis</span><h2>What moved the number</h2></div><span>Top {chartData.length} factors</span></div><div className="chart-area"><ResponsiveContainer width="100%" height={250}><BarChart data={chartData} layout="vertical" margin={{ top: 8, right: 12, bottom: 0, left: 22 }}><CartesianGrid horizontal={false} stroke="#eef1ef"/><XAxis type="number" tickFormatter={value => currency(value, analysis.currencySymbol)} axisLine={false} tickLine={false} tick={{ fill: "#71808c", fontSize: 11 }} /><YAxis type="category" dataKey="name" axisLine={false} tickLine={false} tick={{ fill: "#4c5c65", fontSize: 11 }} width={120}/><Tooltip formatter={(value: number) => signedCurrency(value, analysis.currencySymbol)} contentStyle={{ border: "1px solid #dbe3e0", borderRadius: 12, boxShadow: "0 10px 30px rgba(19,43,51,.12)" }}/><Bar dataKey="impact" radius={[0, 5, 5, 0]}>{chartData.map(item => <Cell key={item.name} fill={item.impact < 0 ? "#d96861" : "#33977c"}/>)}</Bar></BarChart></ResponsiveContainer></div></article></section>
         <section className="drivers-section"><div className="section-heading"><div><span className="eyebrow">Priority causes</span><h2>Where to focus next</h2></div><p>Only material drivers are shown. Each counterfactual compares the current period against its prior-month performance.</p></div><div className="cause-grid">{analysis.causes.map(cause => <CauseCard key={cause.id} cause={cause} analysis={analysis}/>)}</div></section>
