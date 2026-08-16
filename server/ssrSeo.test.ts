@@ -47,6 +47,43 @@ describe("SSR public rendering", () => {
     expect(homePageSource).toContain("Vacancy link copied successfully.");
   });
 
+  it("renders each dedicated insight article with its own canonical route and full content", async () => {
+    const articles = [
+      ["preparing-capability-for-the-work-ahead", "Preparing capability for the work ahead.", "Start with the work, not the role", "insightWorkforce"],
+      ["making-the-first-hiring-brief-more-useful", "Making the first hiring brief more useful.", "The reality of the mandate", "insightEmployer"],
+      ["what-to-clarify-before-strengthening-hr-operations", "What to clarify before strengthening HR operations.", "Compliance and core administration", "insightOutsourcing"],
+    ];
+    for (const [slug, title, section, assetKey] of articles) {
+      const result = await render(`/insights/${slug}`, {});
+      expect(result.head.canonicalPath).toBe(`/insights/${slug}`);
+      expect(result.head.ogType).toBe("article");
+      expect(result.html).toContain(title);
+      expect(result.html).toContain(section);
+      expect(homePageSource).toContain(`/insights/${slug}`);
+      expect(homePageSource).toContain(`assets.${assetKey}`);
+    }
+    expect(homePageSource).not.toContain('Read the note</a></div></article>');
+  });
+
+  it("renders each dedicated resource page with its own canonical route and full content", async () => {
+    const resources = [
+      ["hiring-and-workforce-planning", "Hiring and workforce planning.", "Start with the work"],
+      ["outsourcing-playbooks", "Outsourcing playbooks.", "Define the service boundary"],
+      ["manager-and-hr-practice", "Manager and HR practice.", "Make expectations visible"],
+      ["career-development", "Career development.", "Turn experience into evidence"],
+    ];
+    for (const [slug, title, section] of resources) {
+      const result = await render(`/resources/${slug}`, {});
+      expect(result.head.canonicalPath).toBe(`/resources/${slug}`);
+      expect(result.head.ogType).toBe("article");
+      expect(result.html).toContain(title);
+      expect(result.html).toContain(section);
+      expect(homePageSource).toContain(`"${slug}"`);
+    }
+    expect(homePageSource).toContain("resourceContent");
+    expect(homePageSource).toContain("href={`/resources/${item.slug}`}");
+  });
+
   it("renders the dedicated employer enquiry form without browser globals", async () => {
     const result = await render("/outsourcing/enquiry", {});
     expect(result.html).toContain("Bring your people");

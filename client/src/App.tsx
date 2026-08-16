@@ -26,6 +26,8 @@ export default function App() {
             <Route path="/outsourcing/solutions" component={Home} />
             <Route path="/outsourcing/enquiry" component={Home} />
             <Route path="/services/:slug" component={Home} />
+            <Route path="/insights/:slug" component={Home} />
+            <Route path="/resources/:slug" component={Home} />
             <Route path="/:rest*" component={Home} />
             <Route component={NotFound} />
           </Switch>

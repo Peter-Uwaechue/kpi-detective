@@ -357,3 +357,5 @@
 - [x] Standardize all public forms on the Human Capital email-draft workflow with readable line spacing, Gmail/default-mail guidance, and strict phone-number validation.
 - [x] Make every phone-number field filter non-phone text while typing and enforce strict phone-format validation across all forms.
 - [x] Add shared phone, email, and name validation with blur feedback, specific inline errors, and submit blocking across all public forms.
+- [x] Create dedicated article pages with unique slugs and full content for every insight/resource teaser, then update all matching read-more links away from generic listing pages.
+- [x] Audit and correct every Insights and Resources teaser destination, adding premium dedicated content pages while preserving the screenshot-matching editorial presentation.
