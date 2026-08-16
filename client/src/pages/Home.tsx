@@ -460,9 +460,7 @@ function ReferCandidate({ job }: { job: typeof jobs[number] }) {
   const [rationale, setRationale] = useState("");
   const [candidateCv, setCandidateCv] = useState<File | null>(null);
   const [consent, setConsent] = useState(false);
-  const [sharedFromDevice, setSharedFromDevice] = useState(false);
   const cvInputRef = useRef<HTMLInputElement>(null);
-  const submitReferralMutation = trpc.referrals.submit.useMutation();
   const validCvTypes = ["application/pdf", "application/msword", "application/vnd.openxmlformats-officedocument.wordprocessingml.document"];
   const validCvExtensions = /\.(pdf|doc|docx)$/i;
   const emailPattern = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
@@ -478,7 +476,7 @@ function ReferCandidate({ job }: { job: typeof jobs[number] }) {
   const hasErrors = errorEntries.some(([, error]) => Boolean(error));
   const visibleError = (field: string, error: string) => (attempted || touched[field]) ? error : "";
   const markTouched = (field: string) => setTouched((current) => ({ ...current, [field]: true }));
-  const resetForm = () => { setSubmitted(false); setSubmitting(false); setAttempted(false); setTouched({}); setReferrerName(""); setReferrerEmail(""); setCandidateName(""); setCandidateEmail(""); setLinkedin(""); setRationale(""); setCandidateCv(null); setConsent(false); setSharedFromDevice(false); if (cvInputRef.current) cvInputRef.current.value = ""; };
+  const resetForm = () => { setSubmitted(false); setSubmitting(false); setAttempted(false); setTouched({}); setReferrerName(""); setReferrerEmail(""); setCandidateName(""); setCandidateEmail(""); setLinkedin(""); setRationale(""); setCandidateCv(null); setConsent(false); if (cvInputRef.current) cvInputRef.current.value = ""; };
   const handleOpenChange = (nextOpen: boolean) => { setOpen(nextOpen); if (!nextOpen) window.setTimeout(resetForm, 180); };
   const onCvChange = (event: ChangeEvent<HTMLInputElement>) => { setCandidateCv(event.target.files?.[0] ?? null); markTouched("candidate-cv"); };
   const submitReferral = async (event: FormEvent<HTMLFormElement>) => {
@@ -490,56 +488,26 @@ function ReferCandidate({ job }: { job: typeof jobs[number] }) {
       return;
     }
     setSubmitting(true);
-    try {
-      const cvBase64 = await new Promise<string>((resolve, reject) => {
-        const reader = new FileReader();
-        reader.onload = () => resolve(String(reader.result).split(",")[1] ?? "");
-        reader.onerror = () => reject(new Error("The selected CV could not be read."));
-        reader.readAsDataURL(candidateCv!);
-      });
-      const referralResult = await submitReferralMutation.mutateAsync({ jobSlug: job.slug, jobTitle: job.title, referrerName, referrerEmail, candidateName, candidateEmail, candidateLinkedin: linkedin || undefined, rationale, cvFileName: candidateCv!.name, cvMimeType: candidateCv!.type as "application/pdf" | "application/msword" | "application/vnd.openxmlformats-officedocument.wordprocessingml.document", cvBase64 });
+    const emailBody = [
+      `Candidate referral for: ${job.title}`,
+      `Candidate: ${candidateName}`,
+      `Candidate email: ${candidateEmail}`,
+      `Referrer: ${referrerName}`,
+      `Referrer email: ${referrerEmail}`,
+      `LinkedIn: ${linkedin || "Not provided"}`,
+      `Why they are a fit: ${rationale}`,
+      `Selected CV: ${candidateCv!.name}`,
+      "Please attach the selected CV file before sending this email.",
+    ].join("\\r\\n");
+    const emailHref = `mailto:recruitment@willerssolutions.com?subject=${encodeURIComponent(`Candidate referral: ${candidateName} — ${job.title}`)}&body=${encodeURIComponent(emailBody)}`;
+    window.setTimeout(() => {
       setSubmitted(true);
-      toast.success("Referral submitted successfully");
-      
-      const emailBody = [
-        `Candidate referral for: ${job.title}`,
-        `Candidate: ${candidateName}`,
-        `Candidate email: ${candidateEmail}`,
-        `Referrer: ${referrerName}`,
-        `Referrer email: ${referrerEmail}`,
-        `LinkedIn: ${linkedin || "Not provided"}`,
-        `Why they are a fit: ${rationale}`,
-        `CV: ${referralResult.cvUrl}`,
-      ].join("\\r\\n");
-      
-      window.setTimeout(() => {
-        window.location.href = `mailto:${referralResult.recruitmentContactEmail}?subject=${encodeURIComponent(`Candidate referral: ${candidateName} — ${job.title}`)}&body=${encodeURIComponent(emailBody)}`;
-      }, 300);
-    } catch (error) {
-      if (error instanceof DOMException && error.name === "AbortError") return;
-      const canShareFile = typeof navigator !== "undefined" && typeof navigator.share === "function" && candidateCv && (!navigator.canShare || navigator.canShare({ files: [candidateCv] }));
-      if (canShareFile) {
-        try {
-          await navigator.share({
-            files: [candidateCv],
-            title: `Candidate referral: ${candidateName}`,
-            text: `Please send this referral to recruitment@willerssolutions.com for ${job.title}. Candidate: ${candidateName}. Referrer: ${referrerName}. Why they are a fit: ${rationale}`,
-          });
-          setSharedFromDevice(true);
-          setSubmitted(true);
-          toast.success("Referral shared successfully. Choose Mail to send it to Recruitment.");
-          return;
-        } catch (shareError) {
-          if (shareError instanceof DOMException && shareError.name === "AbortError") return;
-        }
-      }
-      const message = error instanceof Error ? error.message : "We could not submit this referral. Please try again shortly.";
-      toast.error(`${message} You can try again or use the device share option if available.`);
-    } finally {
       setSubmitting(false);
-    }
+      window.location.href = emailHref;
+      toast.success("Referral email draft prepared");
+    }, 220);
   };
-  return <Dialog open={open} onOpenChange={handleOpenChange}><DialogTrigger asChild><button className="refer-trigger" type="button"><UserRoundPlus size={15} /><span>Refer</span></button></DialogTrigger><DialogContent className="referral-modal" showCloseButton={false}><DialogClose asChild><button className="referral-close" aria-label="Close referral form"><X size={21} /></button></DialogClose>{submitted ? <div className="referral-success"><ReferralCelebration /><div className="success-mark"><Check size={27} /></div><Eyebrow>REFERRAL RECEIVED</Eyebrow><DialogTitle>Thank you for the introduction.</DialogTitle><DialogDescription>We’ll review the details and attached CV for <strong>{job.title}</strong> with discretion. {sharedFromDevice ? "The CV was shared from your device; choose Mail and send it to recruitment@willerssolutions.com." : "A draft email addressed to the Recruitment team has been prepared; if your email app did not open, please contact recruitment@willerssolutions.com."}</DialogDescription><DialogClose asChild><button className="editorial-button" type="button">Close <ArrowDownRight size={18} /></button></DialogClose></div> : <><Eyebrow>REFERRAL / {job.sector.toUpperCase()}</Eyebrow><DialogTitle>Refer someone<br /><em>exceptional.</em></DialogTitle><DialogDescription>Put a thoughtful introduction forward for <strong>{job.title}</strong>. We’ll handle their details and CV with care.</DialogDescription><form className="referral-form" onSubmit={submitReferral} noValidate>{attempted && hasErrors && <div className="referral-error-summary" role="alert"><strong>Review the highlighted details.</strong><span>Please correct the fields below before sending the referral.</span></div>}<div className="referral-section"><p>YOUR DETAILS</p><div className="referral-grid"><ReferralInput id="referrer-name" label="Your name" value={referrerName} onChange={setReferrerName} onBlur={() => markTouched("referrer-name")} error={visibleError("referrer-name", referrerNameError)} /><ReferralInput id="referrer-email" label="Your email" type="email" value={referrerEmail} onChange={setReferrerEmail} onBlur={() => markTouched("referrer-email")} error={visibleError("referrer-email", referrerEmailError)} /></div></div><div className="referral-section"><p>THEIR DETAILS</p><div className="referral-grid"><ReferralInput id="candidate-name" label="Candidate name" value={candidateName} onChange={setCandidateName} onBlur={() => markTouched("candidate-name")} error={visibleError("candidate-name", candidateNameError)} /><ReferralInput id="candidate-email" label="Candidate email" type="email" value={candidateEmail} onChange={setCandidateEmail} onBlur={() => markTouched("candidate-email")} error={visibleError("candidate-email", candidateEmailError)} /><ReferralInput id="candidate-linkedin" label="LinkedIn profile (optional)" type="url" wide value={linkedin} onChange={setLinkedin} onBlur={() => markTouched("candidate-linkedin")} error={visibleError("candidate-linkedin", linkedinError)} /><label className={`field referral-field wide referral-upload ${visibleError("candidate-cv", candidateCvError) ? "field-error" : ""}`}><span>Candidate CV</span><input id="candidate-cv" ref={cvInputRef} type="file" accept=".pdf,.doc,.docx,application/pdf,application/msword,application/vnd.openxmlformats-officedocument.wordprocessingml.document" onChange={onCvChange} onBlur={() => markTouched("candidate-cv")} aria-invalid={Boolean(visibleError("candidate-cv", candidateCvError))} aria-describedby="candidate-cv-help candidate-cv-error" /><small id="candidate-cv-help" className="referral-upload-help">PDF, DOC, or DOCX only — up to 6 MB.</small>{candidateCv && !candidateCvError && <small className="referral-upload-name" aria-live="polite">Attached: {candidateCv.name}</small>}{visibleError("candidate-cv", candidateCvError) && <small id="candidate-cv-error" role="alert">{candidateCvError}</small>}</label><ReferralInput id="candidate-rationale" label="Why are they a fit?" area wide value={rationale} onChange={setRationale} onBlur={() => markTouched("candidate-rationale")} error={visibleError("candidate-rationale", rationaleError)} /></div></div><label className={`referral-consent ${visibleError("referral-consent", consentError) ? "referral-consent-error" : ""}`}><input id="referral-consent" type="checkbox" checked={consent} onChange={(event) => setConsent(event.target.checked)} onBlur={() => markTouched("referral-consent")} aria-invalid={Boolean(visibleError("referral-consent", consentError))} aria-describedby={visibleError("referral-consent", consentError) ? "referral-consent-error" : undefined} /><span>I have permission to share these details and the candidate’s CV, and understand Willers will only contact this person about relevant opportunities.</span></label>{visibleError("referral-consent", consentError) && <small id="referral-consent-error" className="consent-error" role="alert">{consentError}</small>}<div className="referral-actions"><DialogClose asChild><button type="button" className="back-button" disabled={submitting}>Cancel</button></DialogClose><button type="submit" className="editorial-button" disabled={submitting}>{submitting ? "Submitting" : "Submit referral"}<ArrowDownRight size={18} /></button></div></form></>}</DialogContent></Dialog>;
+  return <Dialog open={open} onOpenChange={handleOpenChange}><DialogTrigger asChild><button className="refer-trigger" type="button"><UserRoundPlus size={15} /><span>Refer</span></button></DialogTrigger><DialogContent className="referral-modal" showCloseButton={false}><DialogClose asChild><button className="referral-close" aria-label="Close referral form"><X size={21} /></button></DialogClose>{submitted ? <div className="referral-success"><ReferralCelebration /><div className="success-mark"><Check size={27} /></div><Eyebrow>REFERRAL RECEIVED</Eyebrow><DialogTitle>Thank you for the introduction.</DialogTitle><DialogDescription>We’ll review the referral for <strong>{job.title}</strong> with discretion. Your email draft is addressed to recruitment@willerssolutions.com. Please attach the selected CV file in your email app before pressing Send. If no email app opened, set up a default email app in your device settings and submit the referral again.</DialogDescription><DialogClose asChild><button className="editorial-button" type="button">Close <ArrowDownRight size={18} /></button></DialogClose></div> : <><Eyebrow>REFERRAL / {job.sector.toUpperCase()}</Eyebrow><DialogTitle>Refer someone<br /><em>exceptional.</em></DialogTitle><DialogDescription>Put a thoughtful introduction forward for <strong>{job.title}</strong>. We’ll handle their details and CV with care.</DialogDescription><form className="referral-form" onSubmit={submitReferral} noValidate>{attempted && hasErrors && <div className="referral-error-summary" role="alert"><strong>Review the highlighted details.</strong><span>Please correct the fields below before sending the referral.</span></div>}<div className="referral-section"><p>YOUR DETAILS</p><div className="referral-grid"><ReferralInput id="referrer-name" label="Your name" value={referrerName} onChange={setReferrerName} onBlur={() => markTouched("referrer-name")} error={visibleError("referrer-name", referrerNameError)} /><ReferralInput id="referrer-email" label="Your email" type="email" value={referrerEmail} onChange={setReferrerEmail} onBlur={() => markTouched("referrer-email")} error={visibleError("referrer-email", referrerEmailError)} /></div></div><div className="referral-section"><p>THEIR DETAILS</p><div className="referral-grid"><ReferralInput id="candidate-name" label="Candidate name" value={candidateName} onChange={setCandidateName} onBlur={() => markTouched("candidate-name")} error={visibleError("candidate-name", candidateNameError)} /><ReferralInput id="candidate-email" label="Candidate email" type="email" value={candidateEmail} onChange={setCandidateEmail} onBlur={() => markTouched("candidate-email")} error={visibleError("candidate-email", candidateEmailError)} /><ReferralInput id="candidate-linkedin" label="LinkedIn profile (optional)" type="url" wide value={linkedin} onChange={setLinkedin} onBlur={() => markTouched("candidate-linkedin")} error={visibleError("candidate-linkedin", linkedinError)} /><label className={`field referral-field wide referral-upload ${visibleError("candidate-cv", candidateCvError) ? "field-error" : ""}`}><span>Candidate CV</span><input id="candidate-cv" ref={cvInputRef} type="file" accept=".pdf,.doc,.docx,application/pdf,application/msword,application/vnd.openxmlformats-officedocument.wordprocessingml.document" onChange={onCvChange} onBlur={() => markTouched("candidate-cv")} aria-invalid={Boolean(visibleError("candidate-cv", candidateCvError))} aria-describedby="candidate-cv-help candidate-cv-error" /><small id="candidate-cv-help" className="referral-upload-help">PDF, DOC, or DOCX only — up to 6 MB. Attach the selected file to the email draft before sending.</small>{candidateCv && !candidateCvError && <small className="referral-upload-name" aria-live="polite">Attached: {candidateCv.name}</small>}{visibleError("candidate-cv", candidateCvError) && <small id="candidate-cv-error" role="alert">{candidateCvError}</small>}</label><ReferralInput id="candidate-rationale" label="Why are they a fit?" area wide value={rationale} onChange={setRationale} onBlur={() => markTouched("candidate-rationale")} error={visibleError("candidate-rationale", rationaleError)} /></div></div><label className={`referral-consent ${visibleError("referral-consent", consentError) ? "referral-consent-error" : ""}`}><input id="referral-consent" type="checkbox" checked={consent} onChange={(event) => setConsent(event.target.checked)} onBlur={() => markTouched("referral-consent")} aria-invalid={Boolean(visibleError("referral-consent", consentError))} aria-describedby={visibleError("referral-consent", consentError) ? "referral-consent-error" : undefined} /><span>I have permission to share these details and the candidate’s CV, and understand Willers will only contact this person about relevant opportunities.</span></label>{visibleError("referral-consent", consentError) && <small id="referral-consent-error" className="consent-error" role="alert">{consentError}</small>}<div className="referral-actions"><DialogClose asChild><button type="button" className="back-button" disabled={submitting}>Cancel</button></DialogClose><button type="submit" className="editorial-button" disabled={submitting}>{submitting ? "Submitting" : "Submit referral"}<ArrowDownRight size={18} /></button></div></form></>}</DialogContent></Dialog>;
 }
 function JobDetailShare({ job }: { job: Job }) {
   const [copied, setCopied] = useState(false);

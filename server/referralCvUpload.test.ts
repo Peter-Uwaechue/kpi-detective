@@ -15,19 +15,15 @@ describe("candidate referral CV uploads", () => {
     expect(homePageSource).toContain("I have permission to share these details and the candidate’s CV");
   });
 
-  it("submits the CV through the referral mutation rather than exposing it in the browser", () => {
-    expect(homePageSource).toContain("trpc.referrals.submit.useMutation()");
-    expect(homePageSource).toContain("reader.readAsDataURL(candidateCv!)");
-    expect(homePageSource).toContain("cvFileName: candidateCv!.name");
-    expect(homePageSource).toContain("cvBase64");
-    expect(homePageSource).toContain("referralResult.recruitmentContactEmail");
-    expect(homePageSource).toContain("mailto:${referralResult.recruitmentContactEmail}");
+  it("prepares the same recruitment email draft used by services requests", () => {
+    expect(homePageSource).not.toContain("trpc.referrals.submit.useMutation()");
+    expect(homePageSource).toContain("candidateCv!.name");
+    expect(homePageSource).toContain("Please attach the selected CV file before sending this email.");
+    expect(homePageSource).toContain("mailto:recruitment@willerssolutions.com");
     expect(homePageSource).toContain("setSubmitted(true);");
     expect(homePageSource).toContain("window.setTimeout(() => {");
-    expect(homePageSource).toContain("const message = error instanceof Error ? error.message");
-    expect(homePageSource).toContain("recruitment@willerssolutions.com");
-    expect(homePageSource).toContain("navigator.share");
-    expect(homePageSource).toContain("Referral shared successfully. Choose Mail to send it to Recruitment.");
+    expect(homePageSource).toContain("Your email draft is addressed to recruitment@willerssolutions.com.");
+    expect(homePageSource).toContain("Please attach the selected CV file in your email app before pressing Send.");
   });
 
   it("accepts only validated document formats, securely stores their bytes, and records only metadata", () => {

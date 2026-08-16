@@ -348,3 +348,4 @@
 - [x] Fix the candidate-referral Submit referral action so valid completed forms submit reliably and show actionable errors when upload or email handoff fails.
 - [x] Ensure vacancy Copy Link shows a clear visible success confirmation after a successful copy on desktop and mobile.
 - [x] Add a production-safe referral fallback for browsers where the Vercel CV-storage service is unavailable, preserving the CV as an email/share attachment.
+- [x] Align candidate referrals with the services-request email workflow, using a pre-addressed recruitment email without requiring the Vercel upload API.
