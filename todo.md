@@ -312,3 +312,5 @@
 - [x] Replace the public Human Capital email address on the employer success page with a private, clear next-step confirmation; verified with 42 tests and a production build.
 - [x] Add a clear fallback instruction for employer-form visitors whose device has no default email app configured; verified with 43 tests, a production build, and mobile form review.
 - [x] Restore the unavailable published Willers logo asset with a verified direct URL and confirm that the header logo renders correctly on mobile; 43 tests and the production build pass.
+- [x] Route support-form submissions to humancapital@willerssolutions.com through a visitor email-app draft; verified in regression coverage, build, and mobile form review.
+- [x] Ensure support-form email drafts use the shared CRLF draft builder and regression coverage so literal backslash-n text cannot return; verified with 44 tests and a production build.

@@ -20,13 +20,13 @@ describe("employer partnership mailto fallback", () => {
     expect(homePageSource).toContain("formValues.servicePriority");
     expect(homePageSource).toContain("formValues.scope");
     expect(homePageSource).toContain("formValues.timeline");
-    expect(homePageSource).toContain("encodeURIComponent(body)");
+    expect(homePageSource).toContain("createEmailDraftHref(subject, body)");
   });
 
   it("uses encoded CRLF line breaks instead of literal backslash-n text in the email draft", () => {
     expect(homePageSource).toContain('const employerBriefLineBreak = "\\r\\n"');
-    expect(homePageSource).toContain("].join(employerBriefLineBreak)");
-    expect(homePageSource).not.toContain('].join("\\\\n")');
+    expect(homePageSource).toContain("const body = lines.join(employerBriefLineBreak)");
+    expect(homePageSource).not.toMatch(/join\(["']\\\\n["']\)/);
   });
 
   it("keeps the Human Capital email address out of the employer success message", () => {
@@ -38,5 +38,12 @@ describe("employer partnership mailto fallback", () => {
   it("gives visitors a private fallback when no default email app is configured", () => {
     expect(homePageSource).toContain("No email app opened?");
     expect(homePageSource).toContain("Set up a default email app in your device settings");
+  });
+
+  it("routes support notes to the same Human Capital inbox with the shared CRLF draft builder", () => {
+    expect(homePageSource).toContain("function ContactForm()");
+    expect(homePageSource).toContain('const subject = `Support request — ${formValues.name || "New note"}`');
+    expect(homePageSource).toContain('"New website support request"');
+    expect(homePageSource).toContain("createEmailDraftHref(subject, [");
   });
 });

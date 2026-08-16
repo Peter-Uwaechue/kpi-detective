@@ -439,6 +439,10 @@ function ServiceDetail({ slug }: { slug: ServiceDetailSlug }) { const detail = s
 
 const employerContactEmail = "humancapital@willerssolutions.com";
 const employerBriefLineBreak = "\r\n";
+const createEmailDraftHref = (subject: string, lines: string[]) => {
+  const body = lines.join(employerBriefLineBreak);
+  return `mailto:${employerContactEmail}?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`;
+};
 
 function StageForm({ employer = false }: { employer?: boolean }) {
   const [step, setStep] = useState(1);
@@ -468,8 +472,8 @@ function StageForm({ employer = false }: { employer?: boolean }) {
         `Service priority: ${formValues.servicePriority || "Not provided"}`,
         `Workforce or team scope: ${formValues.scope || "Not provided"}`,
         `Target timeline: ${formValues.timeline || "Not provided"}`,
-      ].join(employerBriefLineBreak);
-      window.location.href = `mailto:${employerContactEmail}?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`;
+      ];
+      window.location.href = createEmailDraftHref(subject, body);
     }
     setSent(true);
   };
@@ -589,18 +593,29 @@ function FunmiProfile() {
 }
 function ContactForm() {
   const [sent, setSent] = useState(false);
+  const [formValues, setFormValues] = useState({ name: "", email: "", support: "" });
+  const updateField = (name: keyof typeof formValues, value: string) => setFormValues((current) => ({ ...current, [name]: value }));
   const handleSubmit = (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
+    const subject = `Support request — ${formValues.name || "New note"}`;
+    window.location.href = createEmailDraftHref(subject, [
+      "New website support request",
+      "",
+      `Name: ${formValues.name || "Not provided"}`,
+      `Email address: ${formValues.email || "Not provided"}`,
+      "",
+      `Support request: ${formValues.support || "Not provided"}`,
+    ]);
     setSent(true);
   };
   if (sent) {
-    return <div className="contact-success"><Check size={24} /><p>Thank you. Your note is on its way to our team.</p></div>;
+    return <div className="contact-success"><Check size={24} /><div><p>Your email draft is ready. Please press Send in your email app so our team can review your note.</p><small>If no email app opened, set up a default email app in your device settings, then submit your note again.</small></div></div>;
   }
   return (
     <form className="contact-form" onSubmit={handleSubmit}>
-      <Field label="Your name" />
-      <Field label="Email address" type="email" />
-      <Field label="What would you like support with?" wide area />
+      <Field label="Your name" name="name" value={formValues.name} onChange={(name, value) => updateField(name as keyof typeof formValues, value)} />
+      <Field label="Email address" name="email" type="email" value={formValues.email} onChange={(name, value) => updateField(name as keyof typeof formValues, value)} />
+      <Field label="What would you like support with?" name="support" value={formValues.support} onChange={(name, value) => updateField(name as keyof typeof formValues, value)} wide area />
       <button className="editorial-button" type="submit">Send your note <ArrowDownRight size={18} /></button>
     </form>
   );
