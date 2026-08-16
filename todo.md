@@ -364,3 +364,4 @@
 - [x] Diagnose and restore automatic GitHub-to-Vercel deployment after each completed project checkpoint.
 - [x] Correct all three home-page scenario-card links so each opens a dedicated, subject-matched service page rather than a generic or mismatched destination.
 - [x] Correct every homepage service-navigation card so each destination matches its service subject and no card points to a generic or unrelated page.
+- [x] Replace public contact email with info@willerssolutions.com and update the public phone number to the verified number from nysc.willerssolutions.com across the site.

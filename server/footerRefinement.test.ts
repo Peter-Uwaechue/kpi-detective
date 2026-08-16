@@ -26,6 +26,12 @@ describe("footer visual refinement", () => {
     expect(page).toContain('href="https://peters-portfolio-blond.vercel.app/"');
     expect(page).toContain(">September’s Very Own</a>");
     expect(page).not.toContain("Built for better people work.");
+    expect(page).toContain('href="mailto:info@willerssolutions.com"');
+    expect(page).toContain("info@willerssolutions.com");
+    expect(page).toContain('href="tel:+2347034263272"');
+    expect(page).toContain("+234 703 426 3272");
+    expect(page).not.toContain("hello@willerssolutions.com");
+    expect(page).not.toContain("+234 (0) 1 271 0000");
     expect(page).toContain("8, Adebambo Street, Obanikoro, Lagos");
     expect(page).not.toContain("5b, Samuel Adedoyin, Behind Zenith Headquarters, Victoria Island, Lagos");
     expect(page).toContain('href="https://www.google.com/maps/dir/?api=1&destination=8%2C%20Adebambo%20Street%2C%20Obanikoro%2C%20Lagos"');
