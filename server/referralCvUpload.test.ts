@@ -14,6 +14,8 @@ describe("candidate referral CV uploads", () => {
     expect(homePageSource).toContain("No CV upload is needed in this form");
     expect(homePageSource).toContain("Please attach the candidate’s CV to this email before pressing Send.");
     expect(homePageSource).toContain("I have permission to share these details and the candidate’s CV");
+    expect(homePageSource).toContain('className="referral-attachment-reminder"');
+    expect(homePageSource).toContain("remember to attach the candidate’s CV in your email.");
   });
 
   it("prepares the same recruitment email draft used by services requests", () => {

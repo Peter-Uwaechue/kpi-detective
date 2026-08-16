@@ -352,3 +352,4 @@
 - [x] Fix candidate-referral email drafts so fields appear on separate lines instead of literal backslash escape text.
 - [x] Remove the redundant CV upload field from referrals and add clearer manual-attachment guidance with more spacious email-body formatting.
 - [x] Include the LinkedIn line in candidate-referral email drafts only when a LinkedIn URL is entered.
+- [x] Add a clear reminder near the candidate-referral submit button telling users to attach the CV in the email before sending.
