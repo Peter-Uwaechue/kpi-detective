@@ -498,7 +498,7 @@ function ReferCandidate({ job }: { job: typeof jobs[number] }) {
       `Why they are a fit: ${rationale}`,
       `Selected CV: ${candidateCv!.name}`,
       "Please attach the selected CV file before sending this email.",
-    ].join("\\r\\n");
+    ].join("\r\n");
     const emailHref = `mailto:recruitment@willerssolutions.com?subject=${encodeURIComponent(`Candidate referral: ${candidateName} — ${job.title}`)}&body=${encodeURIComponent(emailBody)}`;
     window.setTimeout(() => {
       setSubmitted(true);

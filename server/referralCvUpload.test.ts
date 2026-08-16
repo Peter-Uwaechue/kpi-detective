@@ -24,6 +24,8 @@ describe("candidate referral CV uploads", () => {
     expect(homePageSource).toContain("window.setTimeout(() => {");
     expect(homePageSource).toContain("Your email draft is addressed to recruitment@willerssolutions.com.");
     expect(homePageSource).toContain("Please attach the selected CV file in your email app before pressing Send.");
+    expect(homePageSource).toContain('].join("\\r\\n")');
+    expect(homePageSource).not.toContain('].join("\\\\r\\\\n")');
   });
 
   it("accepts only validated document formats, securely stores their bytes, and records only metadata", () => {
