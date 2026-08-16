@@ -361,3 +361,5 @@
 - [x] Audit and correct every Insights and Resources teaser destination, adding premium dedicated content pages while preserving the screenshot-matching editorial presentation.
 - [x] Synchronize the verified premium Insights and Resources update to GitHub and Vercel production, then confirm the live deployment.
 - [x] Fix shared article-page typography and responsive header/menu spacing so every Insights and Resources note page has consistent fonts, non-overlapping controls, and reliable mobile tap targets.
+- [x] Diagnose and restore automatic GitHub-to-Vercel deployment after each completed project checkpoint.
+- [x] Correct all three home-page scenario-card links so each opens a dedicated, subject-matched service page rather than a generic or mismatched destination.

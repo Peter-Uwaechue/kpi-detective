@@ -5,6 +5,15 @@ import { describe, expect, it } from "vitest";
 const projectRoot = path.resolve(import.meta.dirname, "..");
 
 describe("dedicated major navigation", () => {
+  it("routes every homepage scenario card to a subject-matched dedicated service page", async () => {
+    const page = await readFile(path.join(projectRoot, "client/src/pages/Home.tsx"), "utf8");
+    expect(page).toContain('assets.scenarioRecruitment, "/services/recruitment-executive-search"');
+    expect(page).toContain('assets.scenarioHr, "/services/hr-advisory-organisation-design"');
+    expect(page).toContain('assets.scenarioWorkforce, "/outsourcing/solutions"');
+    expect(page).not.toContain('assets.scenarioRecruitment, "/for-employers"');
+    expect(page).not.toContain('assets.scenarioHr, "/our-services"');
+  });
+
   it("provides dedicated leadership and outsourcing destination routes", async () => {
     const [page, app] = await Promise.all([
       readFile(path.join(projectRoot, "client/src/pages/Home.tsx"), "utf8"),
