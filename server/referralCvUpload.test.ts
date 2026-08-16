@@ -20,6 +20,14 @@ describe("candidate referral CV uploads", () => {
     expect(homePageSource).toContain("reader.readAsDataURL(candidateCv!)");
     expect(homePageSource).toContain("cvFileName: candidateCv!.name");
     expect(homePageSource).toContain("cvBase64");
+    expect(homePageSource).toContain("referralResult.recruitmentContactEmail");
+    expect(homePageSource).toContain("mailto:${referralResult.recruitmentContactEmail}");
+    expect(homePageSource).toContain("setSubmitted(true);");
+    expect(homePageSource).toContain("window.setTimeout(() => {");
+    expect(homePageSource).toContain("const message = error instanceof Error ? error.message");
+    expect(homePageSource).toContain("recruitment@willerssolutions.com");
+    expect(homePageSource).toContain("navigator.share");
+    expect(homePageSource).toContain("Referral shared successfully. Choose Mail to send it to Recruitment.");
   });
 
   it("accepts only validated document formats, securely stores their bytes, and records only metadata", () => {
@@ -29,6 +37,8 @@ describe("candidate referral CV uploads", () => {
     expect(routerSource).toContain("storagePut(");
     expect(routerSource).toContain("createCandidateReferral({");
     expect(routerSource).toContain("await notifyOwner({");
+    expect(routerSource).toContain('const recruitmentContactEmail = "recruitment@willerssolutions.com"');
+    expect(routerSource).toContain("recruitmentContactEmail } as const");
     expect(schemaSource).toContain('export const candidateReferrals = mysqlTable("candidate_referrals"');
     expect(schemaSource).toContain('cvStorageKey: varchar("cvStorageKey"');
     expect(schemaSource).toContain('cvUrl: text("cvUrl")');

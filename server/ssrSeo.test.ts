@@ -40,8 +40,11 @@ describe("SSR public rendering", () => {
     expect(result.html).toContain("Share Enterprise Sales Executive on X");
     expect(result.html).toContain("Share Enterprise Sales Executive on WhatsApp");
     expect(result.html).toContain("Copy the Enterprise Sales Executive vacancy link");
-    expect(homePageSource).toContain('toast.success("Vacancy link copied")');
+    expect(homePageSource).toContain('toast.success("Vacancy link copied successfully")');
     expect(homePageSource).toContain('toast.error("Unable to copy the vacancy link")');
+    expect(homePageSource).toContain("setCopied(true);");
+    expect(homePageSource).toContain('className={copied ? "is-copied" : undefined}');
+    expect(homePageSource).toContain("Vacancy link copied successfully.");
   });
 
   it("renders the dedicated employer enquiry form without browser globals", async () => {

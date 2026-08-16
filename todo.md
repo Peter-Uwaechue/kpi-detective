@@ -344,3 +344,7 @@
 - [x] Add a Copy Link control alongside vacancy social sharing buttons, with clipboard fallback, success feedback, and responsive regression verification.
 - [x] Fix the job-search Clear Filters action so it resets the search term, location, salary, job type, and sorting state reliably.
 - [x] Add validated CV attachment support to the candidate referral form and include the uploaded file in the employer referral workflow.
+- [x] Route candidate-referral emails and CV referral notifications to recruitment@willerssolutions.com.
+- [x] Fix the candidate-referral Submit referral action so valid completed forms submit reliably and show actionable errors when upload or email handoff fails.
+- [x] Ensure vacancy Copy Link shows a clear visible success confirmation after a successful copy on desktop and mobile.
+- [x] Add a production-safe referral fallback for browsers where the Vercel CV-storage service is unavailable, preserving the CV as an email/share attachment.

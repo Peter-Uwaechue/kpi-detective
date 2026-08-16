@@ -7,6 +7,7 @@ import { systemRouter } from "./_core/systemRouter";
 import { publicProcedure, router } from "./_core/trpc";
 import { storagePut } from "./storage";
 
+const recruitmentContactEmail = "recruitment@willerssolutions.com";
 const MAX_CV_BYTES = 6 * 1024 * 1024;
 const MAX_CV_BASE64_LENGTH = Math.ceil(MAX_CV_BYTES / 3) * 4;
 const cvMimeTypes = [
@@ -90,7 +91,7 @@ export const appRouter = router({
         ].join("\n"),
       });
 
-      return { success: true, ownerNotified } as const;
+      return { success: true, ownerNotified, cvUrl: cvLink, recruitmentContactEmail } as const;
     }),
   }),
 
