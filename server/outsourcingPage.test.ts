@@ -22,7 +22,9 @@ describe("outsourcing page", () => {
     expect(page).toContain("Estimated scope");
     expect(page).toContain("Project or contract support");
     expect(page).toContain('href="/outsourcing"');
-    expect(page).toContain('<a href="#outsourcing-enquiry" className="editorial-button outsourcing-discuss-cta">Discuss your outsourcing needs');
+    expect(page).toContain('href="/outsourcing/enquiry" className="editorial-button outsourcing-discuss-cta">Discuss your outsourcing needs');
+    expect(page).toContain('if (location === "/outsourcing/solutions") return <OutsourcingPage />');
+    expect(page).toContain('if (location === "/outsourcing/enquiry") return <StageForm employer />');
     expect(page).toContain('return href.startsWith("#") ? <a href={href} className={className}>{content}</a>');
     expect(styles).toContain(".outsourcing-enquiry");
     expect(styles).toContain(".outsourcing-form-grid");

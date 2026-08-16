@@ -23,6 +23,9 @@ describe("Funmi Bashorun leadership profile", () => {
     expect(source).not.toContain("<FunmiContactForm />");
     expect(source).not.toContain('<section id="contact-funmi"');
     expect(source).not.toContain('href="#contact-funmi"');
+    expect(source).not.toContain('href="/about-us#leadership"');
+    expect(source).toContain('<Link href="/leadership" className="profile-back"><ArrowLeft size={16} /><span>Back to Leadership</span></Link>');
+    expect(source).toContain('<Link href="/leadership" className="profile-text-link">Meet the leadership team');
     expect(source).toContain('profile: "/leadership/funmi-bashorun"');
     expect(source).not.toContain('{ name: "Tunde Bello", title: "Director, Talent Advisory"');
     expect(app).toContain('<Route path="/leadership/funmi-bashorun" component={Home} />');

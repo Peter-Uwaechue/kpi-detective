@@ -15,7 +15,8 @@ describe("values carousel", () => {
     expect(page).toContain("window.setInterval(() => advance(), 2000)");
     expect(page).toContain("Pause automatic values carousel");
     expect(page).toContain('aria-label="Show previous value"');
-    expect(page).toContain("<ValuesCarousel /><LeadershipCarousel />");
+    expect(page).toContain("<ValuesCarousel /><div className=\"content-callout\">");
+    expect(page).toContain('href="/leadership" className="text-link">Meet the leadership team');
     expect(styles).toContain(".values-carousel-stage { position:relative");
     expect(styles).toContain("@media (prefers-reduced-motion:reduce) { .values-slide { transition:none; } }");
   });

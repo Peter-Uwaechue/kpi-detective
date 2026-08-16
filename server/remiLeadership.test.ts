@@ -22,6 +22,9 @@ describe("Remi Abubakar Bello leadership profile", () => {
     expect(source).not.toContain("<RemiContactForm />");
     expect(source).not.toContain('<section id="contact-remi"');
     expect(source).not.toContain('href="#contact-remi"');
+    expect(source).not.toContain('href="/about-us#leadership"');
+    expect(source).toContain('<Link href="/leadership" className="profile-back"><ArrowLeft size={16} /><span>Back to Leadership</span></Link>');
+    expect(source).toContain('<Link href="/leadership" className="profile-text-link">Meet the leadership team');
     expect(source).not.toContain('{ name: hannahProfile.name, title: hannahProfile.title, image: hannahProfile.image, position: "center 46%", profile: "/leadership/hannah-uwaechue"');
     expect(app).toContain('<Route path="/leadership/remi-abubakar-bello" component={Home} />');
   });
