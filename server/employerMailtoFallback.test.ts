@@ -21,6 +21,8 @@ describe("employer partnership mailto fallback", () => {
     expect(homePageSource).toContain("formValues.scope");
     expect(homePageSource).toContain("formValues.timeline");
     expect(homePageSource).toContain("createEmailDraftHref(subject, body)");
+    expect(homePageSource).toContain('`First name: ${formValues.firstName || "Not provided"}`,\n        "",\n        `Last name: ${formValues.lastName || "Not provided"}`');
+    expect(homePageSource).toContain('`Support needed: ${formValues.supportNeeded || "Not provided"}`,\n        "",\n        `Service priority: ${formValues.servicePriority || "Not provided"}`');
   });
 
   it("uses encoded CRLF line breaks instead of literal backslash-n text in the email draft", () => {
@@ -49,6 +51,12 @@ describe("employer partnership mailto fallback", () => {
     expect(homePageSource).toContain("Phone number:");
     expect(homePageSource).toContain('label="Phone number" name="phone" type="tel"');
     expect(homePageSource).toContain('`Name: ${formValues.name || "Not provided"}`,\n        "",\n        `Email address: ${formValues.email || "Not provided"}`,\n        "",\n        `Phone number: ${formValues.phone || "Not provided"}`,\n        "",\n        `Support request: ${formValues.support || "Not provided"}`');
+  });
+
+  it("applies the same strict phone pattern across reusable and direct form fields", () => {
+    expect(homePageSource).toContain('const phoneInputPattern = "\\\\+?[0-9][0-9\\\\s().-]{6,18}[0-9]"');
+    expect(homePageSource).toContain('type="tel" pattern={phoneInputPattern}');
+    expect(homePageSource).toContain('type="tel" pattern={phoneInputPattern} inputMode="tel"');
   });
 
   it("shows immediate submitting feedback followed by a clear confirmation", () => {
