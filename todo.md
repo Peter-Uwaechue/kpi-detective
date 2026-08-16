@@ -324,3 +324,4 @@
 - [x] Replace every existing placeholder job card and job-detail record with the confirmed vacancy set.
 - [x] Align location, salary, job-type, keyword search, sorting, active-listing counts, and clear-filter interactions to the confirmed vacancies.
 - [x] Validate the job-search list, each job-detail route, and email application drafts on mobile and desktop.
+- [x] Replace repeated human photography on all confirmed vacancy detail pages with distinct non-human role visuals while preserving the application flow; verified with 50 tests, production build, and mobile detail-page review.

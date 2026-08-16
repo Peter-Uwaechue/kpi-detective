@@ -42,6 +42,12 @@ describe("confirmed current vacancies", () => {
     expect(homePageSource).toContain('job.salaryMin === null');
   });
 
+  it("uses distinct non-human visual assets for every vacancy detail page", () => {
+    ["jobTurbomachinery", "jobValves", "jobAirFiltration", "jobServiceDelivery", "jobEnterpriseSales", "jobDocumentation", "jobPackaging"].forEach((assetName) => expect(homePageSource).toContain(`${assetName}: publishedAsset("job-`));
+    expect(homePageSource).not.toContain('image: assets.energy }');
+    expect(homePageSource).not.toContain('image: assets.finance }');
+  });
+
   it("uses per-role detail links and a CRLF-safe recruitment email draft", () => {
     expect(homePageSource).toContain('href={`/job-details?role=${job.slug}`}');
     expect(homePageSource).toContain('new URLSearchParams(window.location.search).get("role")');
