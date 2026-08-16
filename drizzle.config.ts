@@ -1,9 +1,8 @@
 import { defineConfig } from "drizzle-kit";
 
-const connectionString = process.env.DATABASE_URL;
-if (!connectionString) {
-  throw new Error("DATABASE_URL is required to run drizzle commands");
-}
+// Drizzle only requires a syntactically valid URL to generate SQL. Applying a migration
+// still requires the real DATABASE_URL supplied by the deployed data-processing service.
+const connectionString = process.env.DATABASE_URL || "mysql://schema:generate@localhost:3306/kpi_detective";
 
 export default defineConfig({
   schema: "./drizzle/schema.ts",

@@ -1,5 +1,4 @@
 import { ChangeEvent, DragEvent, useEffect, useMemo, useRef, useState } from "react";
-import * as XLSX from "xlsx";
 import {
   Area,
   AreaChart,
@@ -38,6 +37,8 @@ import {
   X,
 } from "lucide-react";
 import { Link, useLocation } from "wouter";
+import { startLogin } from "@/const";
+import { useAuth } from "@/_core/hooks/useAuth";
 import { trpc } from "@/lib/trpc";
 import {
   answerDataQuestion,
@@ -68,18 +69,20 @@ const currency = (value: number, symbol = "") => formatMetric(value, symbol);
 const signedCurrency = (value: number, symbol = "") => `${value > 0 ? "+" : value < 0 ? "−" : ""}${currency(Math.abs(value), symbol)}`;
 const changeText = (value: number) => `${value > 0 ? "+" : ""}${value.toFixed(1)}%`;
 
-const parseSpreadsheet = async (file: File): Promise<Record<string, unknown>[]> => {
-  const extension = file.name.split(".").pop()?.toLowerCase();
-  if (!["csv", "xlsx", "xls"].includes(extension ?? "")) throw new Error("Please choose a CSV or Excel spreadsheet (.xlsx / .xls).");
-  const data = await file.arrayBuffer();
-  const workbook = XLSX.read(data, { type: "array", cellDates: true });
-  const sheet = workbook.Sheets[workbook.SheetNames[0]];
-  if (!sheet) throw new Error("We could not find a readable worksheet in this file.");
-  const rows = XLSX.utils.sheet_to_json<Record<string, unknown>>(sheet, { defval: "", raw: false });
-  if (!rows.length) throw new Error("This spreadsheet has no data rows. Add a header row and at least one record, then try again.");
-  if (rows.length > 25_000) throw new Error("This first release supports up to 25,000 rows per analysis. Please upload a smaller export.");
-  return rows;
+type RemoteImport = {
+  id: string;
+  originalFileName: string;
+  status: "uploading" | "queued" | "profiling" | "ingesting" | "analyzing" | "complete" | "failed" | "cancelled";
+  sourceRowCount: number;
+  usableRowCount: number;
+  columnsJson: unknown;
+  cleaningSummaryJson: unknown;
+  analysisJson: unknown;
+  errorMessage: string | null;
 };
+
+const remoteLogs = (value: unknown) => Array.isArray(value) ? value as Array<{ key: string; title: string; detail: string; count: number; severity: "success" | "warning" | "info" }> : [];
+const remoteProfiles = (value: unknown) => Array.isArray(value) ? value as Array<{ name: string; kind: string }> : [];
 
 function Logo() {
   return <div className="kpi-logo" aria-label="KPI Detective"><span className="kpi-logo-mark"><span /><span /><span /></span><span>KPI <b>Detective</b></span></div>;
@@ -97,6 +100,14 @@ function MetricPill({ label, value, tone = "neutral" }: { label: string; value: 
 
 function CleaningLog({ dataset }: { dataset: CleanedDataset }) {
   return <div className="cleaning-log">{dataset.logs.map(log => <div key={log.key} className={`cleaning-log-row ${log.severity}`}>
+    <div className="log-icon">{log.severity === "warning" ? <AlertTriangle size={16} /> : log.count ? <Check size={16} /> : <CircleHelp size={16} />}</div>
+    <div><strong>{log.title}</strong><p>{log.detail}</p></div>
+    <b>{log.count}</b>
+  </div>)}</div>;
+}
+
+function RemoteCleaningLog({ logs }: { logs: ReturnType<typeof remoteLogs> }) {
+  return <div className="cleaning-log">{logs.map(log => <div key={log.key} className={`cleaning-log-row ${log.severity}`}>
     <div className="log-icon">{log.severity === "warning" ? <AlertTriangle size={16} /> : log.count ? <Check size={16} /> : <CircleHelp size={16} />}</div>
     <div><strong>{log.title}</strong><p>{log.detail}</p></div>
     <b>{log.count}</b>
@@ -130,7 +141,16 @@ function DataTable({ dataset, onToggleExclusion, onUndoChange, onConfirmDuplicat
     <div className="data-table-scroll"><table><thead><tr><th>Row</th>{columns.map(column => <th key={column.name}>{column.name}<small>{column.kind}</small></th>)}<th>Review</th></tr></thead><tbody>{rows.map(row => <tr key={row.id} className={row.excluded ? "is-excluded" : row.possibleDuplicate ? "is-flagged" : ""}><td><b>{row.rowNumber}</b>{row.excluded && <span className="row-status">Excluded</span>}</td>{columns.map(column => { const changed = row.changes.some(change => change.column === column.name); const value = row.values[column.name]; return <td key={column.name} className={changed ? "cell-changed" : ""}>{value === null ? <em>Missing</em> : String(value)}</td>; })}<td><div className="table-actions">{row.changes.length > 0 && <button onClick={() => onUndoChange(row)}>Undo fix</button>}{row.possibleDuplicate && <button onClick={() => onConfirmDuplicate(row)}>Keep row</button>}<button onClick={() => onToggleExclusion(row)}>{row.excluded ? "Restore" : "Exclude"}</button></div></td></tr>)}</tbody></table></div><p className="table-note">Highlighted cells were standardised. Excluded rows are greyed out and do not influence the investigation. Your adjustments take effect before the KPI is recalculated.</p></div>;
 }
 
-function ChatPanel({ analysis, dataset }: { analysis: KpiAnalysis; dataset: CleanedDataset }) {
+function RemoteDataTable({ importId, profiles }: { importId: string; profiles: Array<{ name: string; kind: string }> }) {
+  const [page, setPage] = useState(0);
+  const preview = trpc.kpiImports.preview.useQuery({ importId, page, pageSize: 100 });
+  const columns = profiles.slice(0, 7);
+  const rows = preview.data?.rows ?? [];
+  const total = preview.data?.total ?? 0;
+  return <div className="data-table-wrap"><div className="data-table-toolbar"><span><TableProperties size={16} />{preview.isLoading ? "Loading preview…" : `Showing ${total ? page * 100 + 1 : 0}–${Math.min(total, (page + 1) * 100)} of ${total.toLocaleString()} rows`}</span><div><button onClick={() => setPage(current => Math.max(0, current - 1))} disabled={page === 0 || preview.isFetching}>Previous</button><button onClick={() => setPage(current => current + 1)} disabled={(page + 1) * 100 >= total || preview.isFetching}>Next</button></div></div><div className="data-table-scroll"><table><thead><tr><th>Row</th>{columns.map(column => <th key={column.name}>{column.name}<small>{column.kind}</small></th>)}</tr></thead><tbody>{rows.map(row => { const raw = row.rawValues as Record<string, unknown>; const cleaned = row.cleanedValues as Record<string, unknown>; const changes = Array.isArray(row.changes) ? row.changes as Array<{ column?: string }> : []; return <tr key={row.id} className={row.excluded ? "is-excluded" : row.possibleDuplicate ? "is-flagged" : ""}><td><b>{row.rowNumber}</b>{row.excluded && <span className="row-status">Excluded</span>}</td>{columns.map(column => <td key={column.name} className={changes.some(change => change.column === column.name) ? "cell-changed" : ""}>{cleaned[column.name] === null ? <em>Missing</em> : String(cleaned[column.name] ?? raw[column.name] ?? "")}</td>)}</tr>; })}</tbody></table></div><p className="table-note">This is a 100-row server page. The full dataset is stored and analysed in the backend; changing pages does not load the complete import into your browser.</p></div>;
+}
+
+function ChatPanel({ analysis, dataset }: { analysis: KpiAnalysis; dataset?: CleanedDataset | null }) {
   const [question, setQuestion] = useState("");
   const [messages, setMessages] = useState<ChatMessage[]>([{ id: "welcome", role: "assistant", text: `I have investigated the ${analysis.metricLabel.toLowerCase()} change. Ask why a segment shifted, which customer contributed, or what the KPI would have been without a driver.`, confidence: analysis.confidence }]);
   const ask = trpc.kpi.ask.useMutation();
@@ -143,7 +163,7 @@ function ChatPanel({ analysis, dataset }: { analysis: KpiAnalysis; dataset: Clea
     const text = (customQuestion ?? question).trim();
     if (!text || ask.isPending) return;
     const userMessage: ChatMessage = { id: `user-${Date.now()}`, role: "user", text };
-    const local = answerDataQuestion(text, dataset, analysis);
+    const local = dataset ? answerDataQuestion(text, dataset, analysis) : { answer: "I’m checking the backend analysis for that question…", confidence: analysis.confidence };
     const answerId = `assistant-${Date.now()}`;
     setMessages(current => [...current, userMessage, { id: answerId, role: "assistant", text: local.answer, confidence: local.confidence }]);
     setQuestion("");
@@ -174,6 +194,7 @@ export default function KPIDetective() {
   const [stage, setStage] = useState<Stage>("upload");
   const [rawRows, setRawRows] = useState<Record<string, unknown>[]>([]);
   const [dataset, setDataset] = useState<CleanedDataset | null>(null);
+  const [remoteImportId, setRemoteImportId] = useState<string | null>(null);
   const [analysis, setAnalysis] = useState<KpiAnalysis | null>(null);
   const [error, setError] = useState("");
   const [fileName, setFileName] = useState("");
@@ -185,12 +206,36 @@ export default function KPIDetective() {
     try { return JSON.parse(localStorage.getItem("kpi-detective-history") ?? "[]") as HistoryEntry[]; } catch { return []; }
   });
 
+  const { isAuthenticated, loading: authLoading } = useAuth();
+  const createUpload = trpc.kpiImports.createUpload.useMutation();
+  const completeUpload = trpc.kpiImports.completeUpload.useMutation();
+  const remoteStatus = trpc.kpiImports.get.useQuery({ importId: remoteImportId ?? "00000000-0000-0000-0000-000000000000" }, { enabled: Boolean(remoteImportId), refetchInterval: query => {
+    const status = (query.state.data as RemoteImport | undefined)?.status;
+    return status === "complete" || status === "failed" || status === "cancelled" ? false : 2500;
+  } });
+  const remoteImport = remoteStatus.data as RemoteImport | undefined;
+
   useEffect(() => {
     document.title = "KPI Detective — Understand your numbers";
   }, []);
 
+  useEffect(() => {
+    if (!remoteImport) return;
+    setFileName(remoteImport.originalFileName);
+    if (remoteImport.status === "complete" && remoteImport.analysisJson) {
+      setAnalysis(remoteImport.analysisJson as KpiAnalysis);
+      setDataset(null);
+      setStage("review");
+    }
+    if (remoteImport.status === "failed" || remoteImport.status === "cancelled") {
+      setError(remoteImport.errorMessage || "The backend import did not complete. You can retry the job after checking the worker status.");
+      setStage("upload");
+    }
+  }, [remoteImport]);
+
   const startCleaning = (rows: Record<string, unknown>[], name: string) => {
     setError("");
+    setRemoteImportId(null);
     setFileName(name);
     setRawRows(rows);
     setAnalysis(null);
@@ -209,8 +254,26 @@ export default function KPIDetective() {
 
   const handleFile = async (file?: File) => {
     if (!file) return;
-    try { startCleaning(await parseSpreadsheet(file), file.name); }
-    catch (reason) { setError(reason instanceof Error ? reason.message : "We could not read this spreadsheet."); }
+    if (authLoading) { setError("Checking your secure upload session. Please try again in a moment."); return; }
+    if (!isAuthenticated) { setError("Sign in to upload and keep this private backend import linked to your account."); return; }
+    const extension = file.name.split(".").pop()?.toLowerCase();
+    if (!extension || !["csv", "xlsx"].includes(extension)) { setError("For large-file processing, upload a CSV or XLSX file. Convert legacy XLS files before import."); return; }
+    try {
+      setError("");
+      setDataset(null);
+      setAnalysis(null);
+      setRawRows([]);
+      setFileName(file.name);
+      setStage("cleaning");
+      const prepared = await createUpload.mutateAsync({ fileName: file.name, contentType: file.type || (extension === "csv" ? "text/csv" : "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"), fileBytes: file.size });
+      setRemoteImportId(prepared.importId);
+      const upload = await fetch(prepared.uploadUrl, { method: "PUT", headers: { "Content-Type": file.type || "application/octet-stream" }, body: file });
+      if (!upload.ok) throw new Error(`Upload to secure storage failed (${upload.status}).`);
+      await completeUpload.mutateAsync({ importId: prepared.importId });
+    } catch (reason) {
+      setStage("upload");
+      setError(reason instanceof Error ? reason.message : "We could not queue this import for backend processing.");
+    }
   };
 
   const onInput = (event: ChangeEvent<HTMLInputElement>) => { void handleFile(event.target.files?.[0]); event.target.value = ""; };
@@ -229,6 +292,11 @@ export default function KPIDetective() {
   const confirmDuplicate = (row: CleanedRow) => updateDataset(current => ({ ...current, rows: current.rows.map(item => item.id === row.id ? { ...item, possibleDuplicate: false, issues: item.issues.filter(issue => issue.type !== "possible-duplicate") } : item) }));
 
   const runInvestigation = () => {
+    if (remoteImportId && analysis) {
+      setStage("results");
+      setShowData(false);
+      return;
+    }
     if (!dataset) return;
     try {
       const result = investigateKpi(dataset, rawRows);
@@ -280,8 +348,8 @@ export default function KPIDetective() {
   };
   const closeTour = () => { setOnboarding(false); sessionStorage.setItem("kpi-detective-tour-dismissed", "true"); };
 
-  if (stage === "results" && analysis && dataset) return <main className={`kpi-app ${dark ? "dark-mode" : ""}`}>
-    <header className="app-header dashboard-header"><button className="brand-button" onClick={() => { setStage("upload"); setAnalysis(null); }}><Logo /></button><div className="dashboard-header-actions"><span className="analysis-date"><ClipboardCheck size={15} />Analysis complete</span><button className="icon-button" aria-label="Toggle colour theme" onClick={() => setDark(current => !current)}>{dark ? <Moon size={18} /> : <Moon size={18} />}</button><button className="outline-action" onClick={downloadReport}><Download size={16} />Download report</button><button className="secondary-action print-action" onClick={() => window.print()}>Print / PDF</button><button className="primary-action" onClick={() => { setStage("upload"); setAnalysis(null); }}><UploadCloud size={16} />New analysis</button></div></header>
+  if (stage === "results" && analysis && (dataset || remoteImportId)) return <main className={`kpi-app ${dark ? "dark-mode" : ""}`}>
+    <header className="app-header dashboard-header"><button className="brand-button" onClick={() => { setStage("upload"); setAnalysis(null); setRemoteImportId(null); }}><Logo /></button><div className="dashboard-header-actions"><span className="analysis-date"><ClipboardCheck size={15} />Analysis complete</span><button className="icon-button" aria-label="Toggle colour theme" onClick={() => setDark(current => !current)}>{dark ? <Moon size={18} /> : <Moon size={18} />}</button><button className="outline-action" onClick={downloadReport}><Download size={16} />Download report</button><button className="secondary-action print-action" onClick={() => window.print()}>Print / PDF</button><button className="primary-action" onClick={() => { setStage("upload"); setAnalysis(null); setRemoteImportId(null); }}><UploadCloud size={16} />New analysis</button></div></header>
     <div className="dashboard-shell">
       <aside className="dashboard-sidebar"><div className="sidebar-title">Analysis</div><button className="sidebar-link active"><PanelTop size={17} />Overview</button><button className="sidebar-link" onClick={() => setShowData(true)}><TableProperties size={17} />Cleaned data</button><div className="sidebar-bottom"><div className="sidebar-title">Recent</div>{history.slice(0, 3).map(item => <button className="history-item" key={item.id} title={item.summary}><History size={14} /><span>{item.metric}<small>{new Date(item.at).toLocaleDateString(undefined, { month: "short", day: "numeric" })}</small></span><b className={item.changePercent >= 0 ? "positive" : "negative"}>{changeText(item.changePercent)}</b></button>)}<Link href="/kpi-detective" className="back-site"><ArrowLeft size={15} />KPI Detective</Link></div></aside>
       <div className="dashboard-content"><section className="results-kicker"><div><span className="eyebrow">{readablePeriod(analysis.previousPeriod)} → {readablePeriod(analysis.currentPeriod)}</span><h1>Here’s what changed.</h1></div><MetricPill label="Data quality" value={`${analysis.totalRowsUsed} usable rows`} tone="positive" /></section>
@@ -294,15 +362,15 @@ export default function KPIDetective() {
         <ChatPanel analysis={analysis} dataset={dataset} />
       </div>
     </div>
-    {showData && <div className="modal-backdrop" role="presentation"><section className="data-modal" role="dialog" aria-modal="true" aria-label="Cleaned data review"><div className="modal-head"><div><span className="eyebrow">Transparent cleaning</span><h2>Review the cleaned data</h2></div><button className="icon-button" onClick={() => setShowData(false)} aria-label="Close cleaned data"><X size={18} /></button></div><DataTable dataset={dataset} onToggleExclusion={toggleExclusion} onUndoChange={undoChange} onConfirmDuplicate={confirmDuplicate}/><div className="modal-foot"><p>Any edits will be used in your next investigation.</p><button className="primary-action" onClick={() => { setShowData(false); runInvestigation(); }}><RefreshCcw size={16} />Recalculate</button></div></section></div>}
+    {showData && <div className="modal-backdrop" role="presentation"><section className="data-modal" role="dialog" aria-modal="true" aria-label="Cleaned data review"><div className="modal-head"><div><span className="eyebrow">Transparent cleaning</span><h2>Review the cleaned data</h2></div><button className="icon-button" onClick={() => setShowData(false)} aria-label="Close cleaned data"><X size={18} /></button></div>{remoteImportId && remoteImport ? <RemoteDataTable importId={remoteImportId} profiles={remoteProfiles(remoteImport.columnsJson)} /> : dataset ? <DataTable dataset={dataset} onToggleExclusion={toggleExclusion} onUndoChange={undoChange} onConfirmDuplicate={confirmDuplicate}/> : null}<div className="modal-foot"><p>{remoteImportId ? "This preview is fetched from the backend in 100-row pages; the complete import remains in database storage." : "Any edits will be used in your next investigation."}</p><button className="primary-action" onClick={() => { setShowData(false); runInvestigation(); }}><RefreshCcw size={16} />{remoteImportId ? "Back to analysis" : "Recalculate"}</button></div></section></div>}
   </main>;
 
   return <main className={`kpi-app landing ${dark ? "dark-mode" : ""}`}>
-    <header className="app-header"><button className="brand-button" onClick={() => { setStage("upload"); setDataset(null); }}><Logo /></button><div className="header-actions"><Link href="/kpi-detective" className="site-return"><ArrowLeft size={15} />KPI Detective</Link><button className="theme-control" onClick={() => setDark(current => !current)}><Moon size={16} />{dark ? "Light" : "Dark"}</button></div></header>
+    <header className="app-header"><button className="brand-button" onClick={() => { setStage("upload"); setDataset(null); setRemoteImportId(null); }}><Logo /></button><div className="header-actions"><Link href="/kpi-detective" className="site-return"><ArrowLeft size={15} />KPI Detective</Link><button className="theme-control" onClick={() => setDark(current => !current)}><Moon size={16} />{dark ? "Light" : "Dark"}</button></div></header>
     <StageRail stage={stage} />
     {onboarding && stage === "upload" && <aside className="tour-card"><button onClick={closeTour} aria-label="Close onboarding"><X size={15}/></button><span className="eyebrow">New here?</span><strong>Three steps to clarity</strong><p>Upload a file, quickly review the cleaning work, and get a plain-English explanation of the change.</p><div><span>1 Upload</span><span>2 Review</span><span>3 Investigate</span></div></aside>}
-    {stage === "upload" && <section className="upload-screen"><div className="upload-intro"><span className="eyebrow">An analyst for every spreadsheet</span><h1>Find out <em>why</em><br/>your number moved.</h1><p>KPI Detective cleans your business data, identifies the one change that matters, and explains the drivers in clear, practical language.</p><div className="trust-row"><span><LockKeyhole size={16}/>Your data stays private</span><span><Gauge size={16}/>Confidence on every finding</span></div></div><div className="upload-card"><div className="upload-card-head"><div><span className="upload-icon"><FileSpreadsheet size={22}/></span><h2>Start an investigation</h2></div><span>CSV or Excel</span></div><button className="dropzone" onClick={() => fileInput.current?.click()} onDragOver={event => event.preventDefault()} onDrop={onDrop}><UploadCloud size={28}/><strong>Drop your file here</strong><span>or choose a CSV / .xlsx from your computer</span><i>Maximum 25,000 rows</i></button><input ref={fileInput} type="file" accept=".csv,.xlsx,.xls" onChange={onInput} hidden/><div className="upload-divider"><span>or explore the product</span></div><button className="demo-button" onClick={() => startCleaning(createDemoRows(), "KPI Detective sample retail data")}>Try the sample retail dataset <ArrowRight size={16}/></button>{error && <div className="upload-error"><AlertTriangle size={17}/><span>{error}</span><button onClick={() => setError("")}><X size={15}/></button></div>}<p className="privacy-note"><LockKeyhole size={13}/>Your uploaded file is parsed in this browser. Only aggregated KPI findings are shared when you use the optional AI follow-up assistant.</p></div></section>}
-    {stage === "cleaning" && <section className="progress-screen"><div className="processing-orbit"><div/><Sparkles size={30}/></div><span className="eyebrow">{stageDetails.cleaning.step} · {stageDetails.cleaning.label}</span><h1>Checking the evidence.</h1><p>We’re identifying column types, standardising formats, and surfacing anything that deserves a second look.</p><div className="processing-steps"><span><Check size={15}/>Reading {fileName}</span><span><Loader2 className="spin" size={15}/>Cleaning and validating</span><span>Preparing investigation</span></div></section>}
-    {stage === "review" && dataset && <section className="review-screen"><div className="review-heading"><div><span className="eyebrow">{stageDetails.review.step} · {stageDetails.review.label}</span><h1>Your data is <em>ready to investigate.</em></h1><p>We made only high-confidence standardisations, retained outliers, and kept a traceable log of every action.</p></div><MetricPill label="Source rows" value={String(dataset.sourceRowCount)} /></div>{dataset.warnings.length > 0 && <div className="warning-banner"><AlertTriangle size={17}/><div><strong>A few fields need attention</strong><p>{dataset.warnings.join(" ")}</p></div></div>}<CleaningLog dataset={dataset}/><div className="review-actions"><button className="secondary-action" onClick={() => setShowData(current => !current)}><TableProperties size={17}/>{showData ? "Hide cleaned data" : "View cleaned data"}</button><button className="primary-action large" onClick={runInvestigation}>Investigate {dataset.columns.filter(column => column.kind === "number")[0]?.name ?? "my KPI"}<ArrowRight size={17}/></button></div>{error && <div className="inline-error"><AlertTriangle size={17}/>{error}</div>}{showData && <DataTable dataset={dataset} onToggleExclusion={toggleExclusion} onUndoChange={undoChange} onConfirmDuplicate={confirmDuplicate}/>}</section>}
+    {stage === "upload" && <section className="upload-screen"><div className="upload-intro"><span className="eyebrow">An analyst for every spreadsheet</span><h1>Find out <em>why</em><br/>your number moved.</h1><p>KPI Detective cleans your business data, identifies the one change that matters, and explains the drivers in clear, practical language.</p><div className="trust-row"><span><LockKeyhole size={16}/>Your data stays private</span><span><Gauge size={16}/>Confidence on every finding</span></div></div><div className="upload-card"><div className="upload-card-head"><div><span className="upload-icon"><FileSpreadsheet size={22}/></span><h2>Start an investigation</h2></div><span>CSV or Excel</span></div><button className="dropzone" onClick={() => isAuthenticated ? fileInput.current?.click() : startLogin()} onDragOver={event => event.preventDefault()} onDrop={onDrop}><UploadCloud size={28}/><strong>Drop your file here</strong><span>or choose a CSV / .xlsx from your computer</span><i>No browser row limit · processed securely in the backend</i></button><input ref={fileInput} type="file" accept=".csv,.xlsx" onChange={onInput} hidden/>{!authLoading && !isAuthenticated && <button className="signin-upload" onClick={() => startLogin()}>Sign in to upload private data</button>}<div className="upload-divider"><span>or explore the product</span></div><button className="demo-button" onClick={() => startCleaning(createDemoRows(), "KPI Detective sample retail data")}>Try the sample retail dataset <ArrowRight size={16}/></button>{error && <div className="upload-error"><AlertTriangle size={17}/><span>{error}</span><button onClick={() => setError("")}><X size={15}/></button></div>}<p className="privacy-note"><LockKeyhole size={13}/>Your file uploads directly to private storage and is processed in backend batches. The browser receives only status updates, a small preview page, and aggregated findings.</p></div></section>}
+    {stage === "cleaning" && <section className="progress-screen"><div className="processing-orbit"><div/><Sparkles size={30}/></div><span className="eyebrow">{stageDetails.cleaning.step} · Backend import</span><h1>Checking the evidence.</h1><p>Your complete file is being processed in secure backend batches. You can leave this page open while the worker profiles, cleans, and aggregates the import.</p><div className="processing-steps"><span><Check size={15}/>Stored {fileName}</span><span><Loader2 className="spin" size={15}/>{remoteImport ? `${remoteImport.status} · ${remoteImport.sourceRowCount.toLocaleString()} rows processed` : "Starting secure import"}</span><span>{remoteImport?.status === "analyzing" ? "Calculating KPI drivers" : "Preparing database aggregates"}</span></div></section>}
+    {stage === "review" && (dataset || remoteImport) && <section className="review-screen"><div className="review-heading"><div><span className="eyebrow">{stageDetails.review.step} · {stageDetails.review.label}</span><h1>Your data is <em>ready to investigate.</em></h1><p>{remoteImport ? "The complete upload was cleaned and analysed in the backend. The optional review view fetches 100 rows at a time." : "We made only high-confidence standardisations, retained outliers, and kept a traceable log of every action."}</p></div><MetricPill label="Source rows" value={String(remoteImport?.sourceRowCount ?? dataset?.sourceRowCount ?? 0)} /></div>{dataset?.warnings.length ? <div className="warning-banner"><AlertTriangle size={17}/><div><strong>A few fields need attention</strong><p>{dataset.warnings.join(" ")}</p></div></div> : null}{remoteImport ? <RemoteCleaningLog logs={remoteLogs(remoteImport.cleaningSummaryJson)} /> : dataset ? <CleaningLog dataset={dataset} /> : null}<div className="review-actions"><button className="secondary-action" onClick={() => setShowData(current => !current)}><TableProperties size={17}/>{showData ? "Hide cleaned data" : "View cleaned data"}</button><button className="primary-action large" onClick={runInvestigation}>Investigate {remoteImport ? remoteProfiles(remoteImport.columnsJson).find(column => column.kind === "number")?.name ?? "my KPI" : dataset?.columns.filter(column => column.kind === "number")[0]?.name ?? "my KPI"}<ArrowRight size={17}/></button></div>{error && <div className="inline-error"><AlertTriangle size={17}/>{error}</div>}{showData && (remoteImportId && remoteImport ? <RemoteDataTable importId={remoteImportId} profiles={remoteProfiles(remoteImport.columnsJson)} /> : dataset ? <DataTable dataset={dataset} onToggleExclusion={toggleExclusion} onUndoChange={undoChange} onConfirmDuplicate={confirmDuplicate}/> : null)}</section>}
   </main>;
 }

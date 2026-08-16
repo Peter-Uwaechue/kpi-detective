@@ -83,6 +83,9 @@
 .dropzone strong { font-size: 14px; }
 .dropzone span { color: var(--muted); font-size: 12px; }
 .dropzone i { margin-top: 4px; color: #7e9f94; font: 9px 'DM Mono', monospace; font-style: normal; text-transform: uppercase; letter-spacing: .08em; }
+.signin-upload { width: 100%; height: 38px; margin-top: 10px; border: 1px solid #b7d8cc; border-radius: 9px; color: #176c5a; background: #f6fbf8; font-size: 12px; font-weight: 700; transition: .18s ease; }
+.signin-upload:hover { border-color: #4f9e89; background: #eaf6f0; }
+.dark-mode .signin-upload { color: #b9f3dd; border-color: #416f67; background: #1d403d; }
 .upload-divider { position: relative; display: flex; align-items: center; justify-content: center; margin: 18px 0; color: var(--muted); font-size: 10px; }
 .upload-divider::before, .upload-divider::after { position: absolute; content: ''; width: 38%; height: 1px; background: var(--line); }
 .upload-divider::before { left: 0; }.upload-divider::after { right: 0; }

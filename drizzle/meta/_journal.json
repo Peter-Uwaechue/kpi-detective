@@ -15,6 +15,27 @@
       "when": 1786875755139,
       "tag": "0001_conscious_bloodstorm",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "5",
+      "when": 1786912984226,
+      "tag": "0002_next_johnny_storm",
+      "breakpoints": true
+    },
+    {
+      "idx": 3,
+      "version": "5",
+      "when": 1786913197114,
+      "tag": "0003_pretty_siren",
+      "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "5",
+      "when": 1786913562580,
+      "tag": "0004_majestic_plazm",
+      "breakpoints": true
     }
   ]
 }

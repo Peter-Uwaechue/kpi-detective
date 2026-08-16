@@ -1,0 +1,2 @@
+DROP INDEX `kpi_import_rows_import_signature_idx` ON `kpi_import_rows`;--> statement-breakpoint
+ALTER TABLE `kpi_import_rows` ADD CONSTRAINT `kpi_import_rows_import_signature_uq` UNIQUE(`import_id`,`row_signature`);

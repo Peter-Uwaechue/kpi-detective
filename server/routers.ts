@@ -1,11 +1,13 @@
 import { COOKIE_NAME } from "@shared/const";
 import { z } from "zod";
 import { createCandidateReferral } from "./db";
+import { createKpiImport, getKpiImport, getPreviewPage, updateKpiImport } from "./kpiImportDb";
+import { createImportUploadUrl, getImportObjectInfo } from "./kpiImportStorage";
 import { invokeLLM } from "./_core/llm";
 import { getSessionCookieOptions } from "./_core/cookies";
 import { notifyOwner } from "./_core/notification";
 import { systemRouter } from "./_core/systemRouter";
-import { publicProcedure, router } from "./_core/trpc";
+import { protectedProcedure, publicProcedure, router } from "./_core/trpc";
 import { storagePut } from "./storage";
 
 const recruitmentContactEmail = "recruitment@willerssolutions.com";
@@ -36,6 +38,54 @@ export const appRouter = router({
       return {
         success: true,
       } as const;
+    }),
+  }),
+  kpiImports: router({
+    createUpload: protectedProcedure.input(z.object({
+      fileName: z.string().trim().min(1).max(520),
+      contentType: z.string().trim().min(1).max(180),
+      fileBytes: z.number().int().positive().max(Number.MAX_SAFE_INTEGER),
+    })).mutation(async ({ input, ctx }) => {
+      const extension = input.fileName.split(".").pop()?.toLowerCase();
+      if (!extension || !["csv", "xlsx"].includes(extension)) throw new Error("Large-file imports support CSV and XLSX. Convert legacy XLS files before upload.");
+      const importId = globalThis.crypto.randomUUID();
+      const upload = await createImportUploadUrl({ importId, fileName: input.fileName, contentType: input.contentType });
+      await createKpiImport({
+        id: importId,
+        ownerOpenId: ctx.user.openId,
+        originalFileName: input.fileName,
+        contentType: input.contentType,
+        storageKey: upload.key,
+        storageUrl: `s3://${process.env.KPI_S3_BUCKET ?? "configured-bucket"}/${upload.key}`,
+        fileBytes: input.fileBytes,
+        status: "uploading",
+      });
+      return { importId, uploadUrl: upload.uploadUrl, expiresInSeconds: upload.expiresInSeconds };
+    }),
+    completeUpload: protectedProcedure.input(z.object({ importId: z.string().uuid() })).mutation(async ({ input, ctx }) => {
+      const job = await getKpiImport(input.importId, ctx.user.openId);
+      if (!job) throw new Error("Import job was not found.");
+      const object = await getImportObjectInfo(job.storageKey);
+      if (!object.bytes) throw new Error("The uploaded file is empty or object storage has not finished receiving it.");
+      await updateKpiImport(input.importId, { status: "queued", fileBytes: object.bytes, contentType: object.contentType, queuedAt: new Date(), errorMessage: null });
+      return { importId: input.importId, status: "queued" as const, bytes: object.bytes };
+    }),
+    get: protectedProcedure.input(z.object({ importId: z.string().uuid() })).query(async ({ input, ctx }) => {
+      const job = await getKpiImport(input.importId, ctx.user.openId);
+      if (!job) throw new Error("Import job was not found.");
+      return job;
+    }),
+    preview: protectedProcedure.input(z.object({ importId: z.string().uuid(), page: z.number().int().min(0).default(0), pageSize: z.number().int().min(1).max(200).default(100) })).query(async ({ input, ctx }) => {
+      const job = await getKpiImport(input.importId, ctx.user.openId);
+      if (!job) throw new Error("Import job was not found.");
+      return getPreviewPage(input.importId, input.page, input.pageSize);
+    }),
+    retry: protectedProcedure.input(z.object({ importId: z.string().uuid() })).mutation(async ({ input, ctx }) => {
+      const job = await getKpiImport(input.importId, ctx.user.openId);
+      if (!job) throw new Error("Import job was not found.");
+      if (!["failed", "cancelled"].includes(job.status)) throw new Error("Only failed or cancelled imports can be retried.");
+      await updateKpiImport(input.importId, { status: "queued", queuedAt: new Date(), errorMessage: null });
+      return { importId: input.importId, status: "queued" as const };
     }),
   }),
   kpi: router({
