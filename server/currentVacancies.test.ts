@@ -42,6 +42,12 @@ describe("confirmed current vacancies", () => {
     expect(homePageSource).toContain('job.salaryMin === null');
   });
 
+  it("resets every job-search criterion through the Clear Filters action", () => {
+    expect(homePageSource).toContain('const clearAllSearch = () => { setQuery(""); setLocationFilter("all"); setSalaryFilter("all"); setJobTypeFilter("all"); setSortBy("newest"); resetResults(); beginUpdate(); };');
+    expect(homePageSource).toContain('const activeCriteria = [query.trim(), locationFilter !== "all" ? locationFilter : "", salaryFilter !== "all" ? salaryFilter : "", jobTypeFilter !== "all" ? jobTypeFilter : "", sortBy !== "newest" ? sortBy : ""].filter(Boolean).length;');
+    expect(homePageSource).toContain('onClick={clearAllSearch} disabled={!activeCriteria}');
+  });
+
   it("uses distinct non-human visual assets for every vacancy detail page", () => {
     ["jobTurbomachinery", "jobValves", "jobAirFiltration", "jobServiceDelivery", "jobEnterpriseSales", "jobDocumentation", "jobPackaging"].forEach((assetName) => expect(homePageSource).toContain(`${assetName}: publishedAsset("job-`));
     expect(homePageSource).not.toContain('image: assets.energy }');

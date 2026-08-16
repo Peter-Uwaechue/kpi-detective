@@ -342,3 +342,4 @@
 - [x] Add regression coverage and verify sharing controls across server-rendered desktop and mobile vacancy pages.
 - [x] Add a role-specific WhatsApp sharing control alongside LinkedIn and X on all vacancy detail pages, with regression and responsive verification.
 - [x] Add a Copy Link control alongside vacancy social sharing buttons, with clipboard fallback, success feedback, and responsive regression verification.
+- [x] Fix the job-search Clear Filters action so it resets the search term, location, salary, job type, and sorting state reliably.

@@ -382,8 +382,7 @@ function JobSearch() {
     updateTimerRef.current = window.setTimeout(() => { setIsUpdating(false); updateTimerRef.current = null; }, 420);
   };
   useEffect(() => () => { if (updateTimerRef.current) window.clearTimeout(updateTimerRef.current); }, []);
-  const clearSelectedFilters = () => { setLocationFilter("all"); setSalaryFilter("all"); setJobTypeFilter("all"); resetResults(); beginUpdate(); };
-  const clearAllSearch = () => { setQuery(""); clearSelectedFilters(); setSortBy("newest"); };
+  const clearAllSearch = () => { setQuery(""); setLocationFilter("all"); setSalaryFilter("all"); setJobTypeFilter("all"); setSortBy("newest"); resetResults(); beginUpdate(); };
   const salaryMatches = (job: typeof jobs[number]) => {
     if (salaryFilter === "all") return true;
     if (salaryFilter === "disclosed") return job.salaryMin !== null;
@@ -397,7 +396,7 @@ function JobSearch() {
     .filter((job) => jobTypeFilter === "all" || job.type === jobTypeFilter)
     .filter(salaryMatches)
     .sort((a, b) => sortBy === "salary-high" ? (b.salaryMin ?? -1) - (a.salaryMin ?? -1) : sortBy === "salary-low" ? (a.salaryMin ?? Number.POSITIVE_INFINITY) - (b.salaryMin ?? Number.POSITIVE_INFINITY) : b.postedOrder - a.postedOrder);
-  const activeFilters = [locationFilter !== "all" ? locationFilter : "", salaryFilter !== "all" ? salaryFilter : "", jobTypeFilter !== "all" ? jobTypeFilter : ""].filter(Boolean).length;
+  const activeCriteria = [query.trim(), locationFilter !== "all" ? locationFilter : "", salaryFilter !== "all" ? salaryFilter : "", jobTypeFilter !== "all" ? jobTypeFilter : "", sortBy !== "newest" ? sortBy : ""].filter(Boolean).length;
   return <PageFrame eyebrow="OPPORTUNITIES / 02" title={<>The next<br /><em>move.</em></>} intro="Opportunities with organisations building capability through permanent hiring, specialist recruitment, and workforce programmes. Our recruitment work sits alongside broader HR, workforce, and outsourcing conversations, helping us present each opportunity with practical context.">
     <div className="search-dossier">
       <div className="search-bar"><Search size={19} /><input value={query} onChange={(event) => { setQuery(event.target.value); resetResults(); beginUpdate(); }} placeholder="Search by role, sector or location" /><button onClick={() => { setQuery(""); resetResults(); beginUpdate(); }}>Clear search</button></div>
@@ -408,7 +407,7 @@ function JobSearch() {
         <label className="filter-control"><span>JOB TYPE</span><select value={jobTypeFilter} onChange={(event) => { setJobTypeFilter(event.target.value); resetResults(); beginUpdate(); }}><option value="all">All job types</option><option value="Full-Time">Full-Time</option><option value="Not specified">Not specified</option></select><ChevronDown size={15} /></label>
         <label className="filter-control sort-control"><span>SORT BY</span><select value={sortBy} onChange={(event) => { setSortBy(event.target.value); resetResults(); beginUpdate(); }}><option value="newest">Most recent</option><option value="salary-high">Highest salary</option><option value="salary-low">Lowest salary</option></select><ChevronDown size={15} /></label>
       </div>
-      <div className="filter-summary"><span>{activeFilters ? `${activeFilters} active ${activeFilters === 1 ? "filter" : "filters"}` : query ? "Keyword search active" : "All opportunities"}</span><button className="clear-filter-button" onClick={clearSelectedFilters} disabled={!activeFilters}>Clear filters <X size={14} /></button></div>
+      <div className="filter-summary"><span>{activeCriteria ? `${activeCriteria} active ${activeCriteria === 1 ? "search criterion" : "search criteria"}` : "All opportunities"}</span><button className="clear-filter-button" onClick={clearAllSearch} disabled={!activeCriteria}>Clear filters <X size={14} /></button></div>
     </div>
     <p className="sr-only" role="status" aria-live="polite">{isUpdating ? "Updating opportunities" : `${filtered.length} ${filtered.length === 1 ? "opportunity" : "opportunities"} available`}</p>
     <div className="job-results" aria-busy={isUpdating}>{isUpdating ? <JobListSkeleton /> : <><div className="job-list">{filtered.slice(0, visible).map((job) => <article className="job-row" key={job.slug}><div><Eyebrow>{job.sector}</Eyebrow><Link href={`/job-details?role=${job.slug}`} className="job-card-link" aria-label={`View ${job.title}`}><h3>{job.title}</h3></Link><p>{job.company} · {job.location}</p></div><div className="job-side"><span>{job.type}</span><strong>{job.salary}</strong><div className="job-actions"><ReferCandidate job={job} /><ShareJob job={job} /><Link href={`/job-details?role=${job.slug}`} className="job-detail-link" aria-label={`View ${job.title}`}><ArrowDownRight size={20} /></Link></div></div></article>)}</div>{!filtered.length && <div className="empty-results"><span>00</span><h3>No opportunities match this brief.</h3><p>Try widening the location, salary range, or job type. New mandates are added frequently.</p><button className="text-link" onClick={clearAllSearch}>Reset the search <ArrowRight size={17} /></button></div>}{visible < filtered.length && <button className="load-more" onClick={() => setVisible((count) => count + 3)}>Load more opportunities <ArrowDownRight size={18} /></button>}</>}</div>
