@@ -37,4 +37,27 @@ describe("SSR public rendering", () => {
     expect(result.html).toContain("Organisation");
     expect(result.head.noindex).toBe(true);
   });
+
+  it("embeds a complete, route-specific JobPosting record for each vacancy detail page", async () => {
+    const disclosedSalary = await render("/job-details?role=enterprise-sales-executive", {});
+    const undisclosedSalary = await render("/job-details?role=service-delivery-supervisor", {});
+    const extractPosting = (html: string) => JSON.parse(html.match(/<script type="application\/ld\+json">(.*?)<\/script>/)?.[1] ?? "{}") as Record<string, unknown>;
+    const enterprise = extractPosting(disclosedSalary.html);
+    const serviceDelivery = extractPosting(undisclosedSalary.html);
+
+    expect(enterprise).toMatchObject({
+      "@context": "https://schema.org",
+      "@type": "JobPosting",
+      title: "Enterprise Sales Executive",
+      datePosted: "2026-08-16",
+      employmentType: "FULL_TIME",
+      hiringOrganization: { name: "confidential" },
+      jobLocation: { address: { addressCountry: "NG", addressRegion: "Lagos" } },
+      baseSalary: { currency: "NGN", value: { minValue: 250000, maxValue: 400000, unitText: "MONTH" } },
+    });
+    expect(enterprise.description).toContain("<ul>");
+    expect(enterprise.url).toBe("https://willers-solution-beta.vercel.app/job-details?role=enterprise-sales-executive");
+    expect(serviceDelivery).toMatchObject({ "@type": "JobPosting", title: "Service Delivery Supervisor" });
+    expect(serviceDelivery).not.toHaveProperty("baseSalary");
+  });
 });

@@ -64,6 +64,40 @@ const jobs: Job[] = [
   { slug: "sales-business-development-manager", title: "Sales and Business Development Manager", company: "Confidential Flexible Packaging Client", location: "Ikeja, Lagos, Nigeria", locationGroup: "Lagos", sector: "Packaging", type: "Not specified", salary: "₦500,000 – ₦600,000", salaryMin: 500, salaryMax: 600, postedOrder: 1, summary: "Lead revenue growth and market expansion in flexible packaging through strategic sales, key-account management, and new-business development.", responsibilities: ["Develop sales strategies to achieve revenue and market-share goals.", "Identify target clients, segments, and business opportunities while managing major accounts, negotiations, and renewals.", "Conduct market research and work with internal teams to align commercial and operational priorities.", "Monitor performance, prepare reports, and recommend sales improvements.", "Support prompt payment tracking, account reconciliation, and credit control."], requirements: ["7–10 years of flexible-packaging sales or business-development experience.", "A demonstrable record of meeting sales targets and driving growth.", "Strong communication, negotiation, analytical, and Microsoft Office skills.", "An energetic, results-oriented, and highly professional approach."], qualifications: ["Bachelor’s degree in Business Administration, Marketing, or a related field.", "A Master’s degree is an advantage."], applicationSubject: "SALES AND BUSINESS DEVELOPMENT MANAGER", reportsTo: "Managing Director / CEO", image: assets.jobPackaging },
 ];
 const recruitmentContactEmail = "recruitment@willerssolutions.com";
+const jobPostedDate = "2026-08-16";
+const structuredDataOrigin = "https://willers-solution-beta.vercel.app";
+const escapeStructuredHtml = (value: string) => value.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;").replace(/'/g, "&#39;");
+const jobPostingDescription = (job: Job) => [
+  `<p>${escapeStructuredHtml(job.summary)}</p>`,
+  `<p>Responsibilities:</p><ul>${job.responsibilities.map((item) => `<li>${escapeStructuredHtml(item)}</li>`).join("")}</ul>`,
+  `<p>Requirements:</p><ul>${job.requirements.map((item) => `<li>${escapeStructuredHtml(item)}</li>`).join("")}</ul>`,
+  `<p>Education and qualifications:</p><ul>${job.qualifications.map((item) => `<li>${escapeStructuredHtml(item)}</li>`).join("")}</ul>`,
+].join("");
+function JobPostingJsonLd({ job }: { job: Job }) {
+  const salary = job.salaryMin !== null && job.salaryMax !== null ? {
+    "@type": "MonetaryAmount",
+    currency: "NGN",
+    value: { "@type": "QuantitativeValue", minValue: job.salaryMin * 1000, maxValue: job.salaryMax * 1000, unitText: "MONTH" },
+  } : undefined;
+  const posting = {
+    "@context": "https://schema.org",
+    "@type": "JobPosting",
+    title: job.title,
+    description: jobPostingDescription(job),
+    identifier: { "@type": "PropertyValue", name: "Willers Solutions Limited", value: job.slug },
+    datePosted: jobPostedDate,
+    ...(job.type === "Full-Time" ? { employmentType: "FULL_TIME" } : {}),
+    hiringOrganization: { "@type": "Organization", name: "confidential" },
+    jobLocation: {
+      "@type": "Place",
+      address: { "@type": "PostalAddress", addressLocality: job.location.split(",")[0]!.trim(), addressRegion: "Lagos", addressCountry: "NG" },
+    },
+    ...(salary ? { baseSalary: salary } : {}),
+    url: `${structuredDataOrigin}/job-details?role=${encodeURIComponent(job.slug)}`,
+  };
+  const json = JSON.stringify(posting).replace(/</g, "\\u003c");
+  return <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: json }} />;
+}
 const createJobApplicationHref = (job: Job) => {
   const body = ["Dear Willers Solutions Recruitment Team,", "", `I would like to apply for the ${job.title} position.`, "", "Full name:", "Phone number:", "LinkedIn profile (optional):", "", "Please find my CV attached.", "", "Kind regards,"].join("\r\n");
   return `mailto:${recruitmentContactEmail}?subject=${encodeURIComponent(job.applicationSubject)}&body=${encodeURIComponent(body)}`;
@@ -456,7 +490,7 @@ function JobDetails() {
   const search = useSearch();
   const role = new URLSearchParams(search).get("role") ?? "";
   const job = jobs.find((item) => item.slug === role) ?? jobs[0];
-  return <PageFrame eyebrow={`OPPORTUNITY / ${String(job.postedOrder).padStart(2, "0")}`} title={<>{job.title}<br /><em>Now hiring.</em></>} intro={job.summary}><div className="detail-layout"><div className="detail-main"><img className="detail-image" src={job.image} alt="" /><div className="detail-copy"><Eyebrow>THE ROLE</Eyebrow><p className="large-copy">{job.summary}</p><h3>Key responsibilities</h3><ul>{job.responsibilities.map((item) => <li key={item}>{item}</li>)}</ul><h3>What you’ll bring</h3><ul>{job.requirements.map((item) => <li key={item}>{item}</li>)}</ul><h3>Education & qualifications</h3><ul>{job.qualifications.map((item) => <li key={item}>{item}</li>)}</ul></div></div><aside className="detail-aside"><div><Eyebrow>LOCATION</Eyebrow><p>{job.location}</p></div><div><Eyebrow>EMPLOYMENT TYPE</Eyebrow><p>{job.type}</p></div><div><Eyebrow>COMPENSATION</Eyebrow><p className={job.salaryMin === null ? "" : "naira"}>{job.salary}</p></div>{job.reportsTo && <div><Eyebrow>REPORTS TO</Eyebrow><p>{job.reportsTo}</p></div>}<div><Eyebrow>HOW TO APPLY</Eyebrow><p>Send your CV to {recruitmentContactEmail} using the stated subject line.</p></div><a href={createJobApplicationHref(job)} className="editorial-button">Apply by email <ArrowDownRight size={18} /></a><Link href="/job-search" className="save-button">View all roles <ArrowLeft size={16} /></Link></aside></div></PageFrame>;
+  return <><JobPostingJsonLd job={job} /><PageFrame eyebrow={`OPPORTUNITY / ${String(job.postedOrder).padStart(2, "0")}`} title={<>{job.title}<br /><em>Now hiring.</em></>} intro={job.summary}><div className="detail-layout"><div className="detail-main"><img className="detail-image" src={job.image} alt="" /><div className="detail-copy"><Eyebrow>THE ROLE</Eyebrow><p className="large-copy">{job.summary}</p><h3>Key responsibilities</h3><ul>{job.responsibilities.map((item) => <li key={item}>{item}</li>)}</ul><h3>What you’ll bring</h3><ul>{job.requirements.map((item) => <li key={item}>{item}</li>)}</ul><h3>Education & qualifications</h3><ul>{job.qualifications.map((item) => <li key={item}>{item}</li>)}</ul></div></div><aside className="detail-aside"><div><Eyebrow>LOCATION</Eyebrow><p>{job.location}</p></div><div><Eyebrow>EMPLOYMENT TYPE</Eyebrow><p>{job.type}</p></div><div><Eyebrow>COMPENSATION</Eyebrow><p className={job.salaryMin === null ? "" : "naira"}>{job.salary}</p></div>{job.reportsTo && <div><Eyebrow>REPORTS TO</Eyebrow><p>{job.reportsTo}</p></div>}<div><Eyebrow>HOW TO APPLY</Eyebrow><p>Send your CV to {recruitmentContactEmail} using the stated subject line.</p></div><a href={createJobApplicationHref(job)} className="editorial-button">Apply by email <ArrowDownRight size={18} /></a><Link href="/job-search" className="save-button">View all roles <ArrowLeft size={16} /></Link></aside></div></PageFrame></>;
 }
 
 function PageFrame({ eyebrow, title, intro, children }: { eyebrow: string; title: ReactNode; intro: string; children: ReactNode }) { return <div><Header /><main className="page"><section className="page-hero"><Eyebrow>{eyebrow}</Eyebrow><h1>{title}</h1><p>{intro}</p></section><section className="page-content">{children}</section></main><Footer /></div>; }

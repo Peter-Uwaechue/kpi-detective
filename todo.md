@@ -334,3 +334,7 @@
 - [x] Add automated SSR verification for rendered page content, metadata, canonical URLs, and 404 responses.
 - [x] Verify SSR rendering, hydration, browser interactions, regression tests, and production build before publishing.
 - [x] Investigate the reported Vercel production-deployment failure, distinguish it from superseded migration attempts, and verify the current live production route.
+- [x] Audit confirmed vacancy fields and current SSR metadata output against Google JobPosting requirements.
+- [x] Generate route-specific JobPosting JSON-LD for every confirmed vacancy while omitting unverified optional details.
+- [x] Add regression coverage for job structured-data completeness, salary handling, location formatting, and safe JSON serialization.
+- [x] Verify server-rendered structured data, production build, GitHub sync, and the live Vercel vacancy output.
