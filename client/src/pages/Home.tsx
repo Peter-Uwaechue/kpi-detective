@@ -491,7 +491,7 @@ function ReferCandidate({ job }: { job: typeof jobs[number] }) {
       `Referrer: ${referrerName}`,
       `Referrer email: ${referrerEmail}`,
       "",
-      `LinkedIn: ${linkedin || "Not provided"}`,
+      ...(linkedin.trim() ? [`LinkedIn: ${linkedin.trim()}`, ""] : []),
       `Why they are a fit: ${rationale}`,
       "",
       "Please attach the candidate’s CV to this email before pressing Send.",

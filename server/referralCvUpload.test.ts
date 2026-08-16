@@ -27,6 +27,8 @@ describe("candidate referral CV uploads", () => {
     expect(homePageSource).toContain("No CV upload is needed in this form—attach the candidate’s CV to the email before pressing Send.");
     expect(homePageSource).toContain('].join("\\r\\n")');
     expect(homePageSource).not.toContain('].join("\\\\r\\\\n")');
+    expect(homePageSource).toContain('...(linkedin.trim() ? [`LinkedIn: ${linkedin.trim()}`, ""] : [])');
+    expect(homePageSource).not.toContain('LinkedIn: ${linkedin || "Not provided"}');
   });
 
   it("accepts only validated document formats, securely stores their bytes, and records only metadata", () => {
