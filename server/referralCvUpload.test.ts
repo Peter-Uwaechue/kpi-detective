@@ -7,23 +7,24 @@ const routerSource = fs.readFileSync(path.resolve(process.cwd(), "server/routers
 const schemaSource = fs.readFileSync(path.resolve(process.cwd(), "drizzle/schema.ts"), "utf8");
 
 describe("candidate referral CV uploads", () => {
-  it("offers an accessible CV field with clear file restrictions", () => {
-    expect(homePageSource).toContain('id="candidate-cv"');
-    expect(homePageSource).toContain('accept=".pdf,.doc,.docx,application/pdf,application/msword,application/vnd.openxmlformats-officedocument.wordprocessingml.document"');
-    expect(homePageSource).toContain("PDF, DOC, or DOCX only — up to 6 MB.");
-    expect(homePageSource).toContain("Attach the candidate’s CV in PDF, DOC, or DOCX format.");
+  it("keeps CV attachment guidance clear without duplicating the upload field", () => {
+    expect(homePageSource).not.toContain('id="candidate-cv"');
+    expect(homePageSource).not.toContain("candidateCv");
+    expect(homePageSource).toContain("when your email opens, attach the candidate’s CV before pressing Send.");
+    expect(homePageSource).toContain("No CV upload is needed in this form");
+    expect(homePageSource).toContain("Please attach the candidate’s CV to this email before pressing Send.");
     expect(homePageSource).toContain("I have permission to share these details and the candidate’s CV");
   });
 
   it("prepares the same recruitment email draft used by services requests", () => {
     expect(homePageSource).not.toContain("trpc.referrals.submit.useMutation()");
-    expect(homePageSource).toContain("candidateCv!.name");
-    expect(homePageSource).toContain("Please attach the selected CV file before sending this email.");
+    expect(homePageSource).not.toContain("candidateCv!.name");
+    expect(homePageSource).not.toContain("Please attach the selected CV file before sending this email.");
     expect(homePageSource).toContain("mailto:recruitment@willerssolutions.com");
     expect(homePageSource).toContain("setSubmitted(true);");
     expect(homePageSource).toContain("window.setTimeout(() => {");
     expect(homePageSource).toContain("Your email draft is addressed to recruitment@willerssolutions.com.");
-    expect(homePageSource).toContain("Please attach the selected CV file in your email app before pressing Send.");
+    expect(homePageSource).toContain("No CV upload is needed in this form—attach the candidate’s CV to the email before pressing Send.");
     expect(homePageSource).toContain('].join("\\r\\n")');
     expect(homePageSource).not.toContain('].join("\\\\r\\\\n")');
   });

@@ -350,3 +350,4 @@
 - [x] Add a production-safe referral fallback for browsers where the Vercel CV-storage service is unavailable, preserving the CV as an email/share attachment.
 - [x] Align candidate referrals with the services-request email workflow, using a pre-addressed recruitment email without requiring the Vercel upload API.
 - [x] Fix candidate-referral email drafts so fields appear on separate lines instead of literal backslash escape text.
+- [x] Remove the redundant CV upload field from referrals and add clearer manual-attachment guidance with more spacious email-body formatting.
