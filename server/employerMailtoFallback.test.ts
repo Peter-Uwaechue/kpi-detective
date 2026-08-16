@@ -22,5 +22,16 @@ describe("employer partnership mailto fallback", () => {
     expect(homePageSource).toContain("formValues.timeline");
     expect(homePageSource).toContain("encodeURIComponent(body)");
   });
-});
 
+  it("uses encoded CRLF line breaks instead of literal backslash-n text in the email draft", () => {
+    expect(homePageSource).toContain('const employerBriefLineBreak = "\\r\\n"');
+    expect(homePageSource).toContain("].join(employerBriefLineBreak)");
+    expect(homePageSource).not.toContain('].join("\\\\n")');
+  });
+
+  it("keeps the Human Capital email address out of the employer success message", () => {
+    expect(homePageSource).toContain("Your completed brief has been prepared in an email draft.");
+    expect(homePageSource).toContain("Your email draft is ready. Please press Send in your email app to complete your request.");
+    expect(homePageSource).not.toContain("deliver the completed brief to ${employerContactEmail}");
+  });
+});
