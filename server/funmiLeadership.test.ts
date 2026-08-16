@@ -19,6 +19,10 @@ describe("Funmi Bashorun leadership profile", () => {
     expect(source).toContain("Nimex Petroleum Group");
     expect(source).toContain("Since joining Argus in 2020");
     expect(source).toContain("function FunmiProfile()");
+    expect(source).toContain('name="Funmi Bashorun" focus="Energy markets, trade operations, and regional commercial clarity."');
+    expect(source).not.toContain("<FunmiContactForm />");
+    expect(source).not.toContain('<section id="contact-funmi"');
+    expect(source).not.toContain('href="#contact-funmi"');
     expect(source).toContain('profile: "/leadership/funmi-bashorun"');
     expect(source).not.toContain('{ name: "Tunde Bello", title: "Director, Talent Advisory"');
     expect(app).toContain('<Route path="/leadership/funmi-bashorun" component={Home} />');

@@ -18,6 +18,10 @@ describe("Remi Abubakar Bello leadership profile", () => {
     expect(source).toContain("Nigeria Society of Engineers");
     expect(source).toContain("/leadership/remi-abubakar-bello");
     expect(source).toContain("function RemiProfile()");
+    expect(source).toContain('name="Remi Abubakar Bello" focus="Technical depth, operational discipline, and governance context."');
+    expect(source).not.toContain("<RemiContactForm />");
+    expect(source).not.toContain('<section id="contact-remi"');
+    expect(source).not.toContain('href="#contact-remi"');
     expect(source).not.toContain('{ name: hannahProfile.name, title: hannahProfile.title, image: hannahProfile.image, position: "center 46%", profile: "/leadership/hannah-uwaechue"');
     expect(app).toContain('<Route path="/leadership/remi-abubakar-bello" component={Home} />');
   });

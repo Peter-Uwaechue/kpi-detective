@@ -49,4 +49,12 @@ describe("employer partnership mailto fallback", () => {
     expect(homePageSource).toContain("Phone number:");
     expect(homePageSource).toContain('label="Phone number" name="phone" type="tel"');
   });
+
+  it("shows immediate submitting feedback followed by a clear confirmation", () => {
+    expect(homePageSource).toContain("const [isSubmitting, setIsSubmitting] = useState(false)");
+    expect(homePageSource).toContain("setIsSubmitting(true)");
+    expect(homePageSource).toContain("form-submit-spinner");
+    expect(homePageSource).toContain("Preparing your email draft…");
+    expect(homePageSource).toContain("Your email draft is ready. Please press Send");
+  });
 });

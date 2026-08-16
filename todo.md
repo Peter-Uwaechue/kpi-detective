@@ -316,3 +316,5 @@
 - [x] Ensure support-form email drafts use the shared CRLF draft builder and regression coverage so literal backslash-n text cannot return; verified with 44 tests and a production build.
 - CANCELED / superseded: Add a clear, clickable phone-contact section to the support-form confirmation state.
 - [x] Add a required Phone number input directly to the support request form and include it in the Human Capital email draft; verified with 44 tests, a production build, and mobile form review.
+- [x] Add an immediate loading spinner and clear success message to the support request form submission flow; verified with 45 tests, a production build, and mobile form review.
+- [x] Remove the Remi and Funmi individual note forms and replace them with polished leadership-profile closing sections that require no email submission; verified with 45 tests, a production build, and mobile profile review.
