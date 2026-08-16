@@ -19,7 +19,9 @@ describe("Vercel deployment configuration", () => {
     expect(config).toContain('"destination": "/api/ssr"');
     expect(guide).toContain("Peter-Uwaechue/Willers-solutions");
     expect(guide).toContain("push to `main`");
-    expect(viteServer).toContain('import("vite")');
+    expect(viteServer).toContain('import(vitePackage)');
     expect(viteServer).not.toContain('from "vite"');
+    expect(viteServer).toContain("pathToFileURL");
+    expect(viteServer).toContain('import(viteConfigUrl)');
   });
 });

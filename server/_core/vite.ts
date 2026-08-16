@@ -3,6 +3,7 @@ import fs from "node:fs";
 import { type Server } from "node:http";
 import { nanoid } from "nanoid";
 import path from "node:path";
+import { pathToFileURL } from "node:url";
 import superjson from "superjson";
 import { DEFAULT_OG_IMAGE, SITE_DESCRIPTION, SITE_NAME, type RouteMeta } from "../../shared/seo";
 import { buildSsrPrefetch } from "./ssrCaller";
@@ -54,9 +55,11 @@ async function renderRequest(url: string, req: Request, res: Response, render: (
 }
 
 export async function setupVite(app: Express, server: Server) {
+  const vitePackage = "vite";
+  const viteConfigUrl = pathToFileURL(path.resolve(process.cwd(), "vite.config.ts")).href;
   const [{ createServer: createViteServer }, { default: viteConfig }] = await Promise.all([
-    import("vite"),
-    import("../../vite.config"),
+    import(vitePackage),
+    import(viteConfigUrl),
   ]);
   const vite = await createViteServer({ ...viteConfig, configFile: false, server: { middlewareMode: true, hmr: { server }, allowedHosts: true }, appType: "custom" });
   app.use(vite.middlewares);
