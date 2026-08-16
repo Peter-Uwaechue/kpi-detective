@@ -48,6 +48,7 @@ describe("employer partnership mailto fallback", () => {
     expect(homePageSource).toContain("formValues.phone");
     expect(homePageSource).toContain("Phone number:");
     expect(homePageSource).toContain('label="Phone number" name="phone" type="tel"');
+    expect(homePageSource).toContain('`Name: ${formValues.name || "Not provided"}`,\n        "",\n        `Email address: ${formValues.email || "Not provided"}`,\n        "",\n        `Phone number: ${formValues.phone || "Not provided"}`,\n        "",\n        `Support request: ${formValues.support || "Not provided"}`');
   });
 
   it("shows immediate submitting feedback followed by a clear confirmation", () => {

@@ -353,3 +353,4 @@
 - [x] Remove the redundant CV upload field from referrals and add clearer manual-attachment guidance with more spacious email-body formatting.
 - [x] Include the LinkedIn line in candidate-referral email drafts only when a LinkedIn URL is entered.
 - [x] Add a clear reminder near the candidate-referral submit button telling users to attach the CV in the email before sending.
+- [x] Ensure support-form requests go to humancapital@willerssolutions.com with readable spacing, real line breaks, and clear email-app fallback guidance.
