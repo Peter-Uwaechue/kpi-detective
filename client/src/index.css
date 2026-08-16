@@ -266,3 +266,12 @@ button { border:0; background:none; color:inherit; }
 .leadership-closing-panel .text-link { color:var(--ivory); }
 @media (max-width:720px) { .leadership-closing { grid-template-columns:1fr; gap:28px; } .leadership-closing-panel { padding:28px 22px; } .leadership-closing-panel h3 { margin-bottom:26px; } }
 @media (prefers-reduced-motion:reduce) { .leadership-closing-panel .text-link { transition:none; } }
+
+/* Dark leadership headers: preserve the supplied mark while giving it a crisp contrast field. */
+.header-dark .brand { padding:5px 10px; border-radius:3px; background:rgba(249,247,242,.94); box-shadow:0 5px 18px rgba(0,0,0,.28); }
+.header-dark .brand-logo { filter:none; opacity:1; }
+.header-dark .desktop-nav a, .header-dark .hire-link { color:#f9f7f2; text-shadow:0 1px 14px rgba(0,0,0,.8); }
+.header-dark .desktop-nav a:hover, .header-dark .desktop-nav a:focus-visible, .header-dark .hire-link:hover, .header-dark .hire-link:focus-visible { color:#99e6ff; }
+.header-dark .menu-toggle { padding:8px 11px; border:1px solid rgba(153,230,255,.82); background:rgba(4,29,40,.86); color:#f9f7f2; box-shadow:0 6px 20px rgba(0,0,0,.34); text-shadow:none; }
+.header-dark .menu-toggle:hover, .header-dark .menu-toggle:focus-visible { background:#99e6ff; border-color:#99e6ff; color:#071b25; outline:none; }
+@media (max-width:600px) { .header-dark .brand { padding:4px 8px; } .header-dark .menu-toggle { padding:7px 9px; } }

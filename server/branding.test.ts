@@ -22,6 +22,10 @@ describe("site branding", () => {
     expect(styles).toContain("padding:0!important; border:0!important; background:transparent!important; box-shadow:none!important");
     expect(styles).toContain(".footer .brand-logo { filter:none; opacity:1; }");
     expect(styles).toContain(".footer-logo-mark-frame { display:block; width:168px; height:56px; overflow:hidden; }");
+    expect(styles).toContain(".header-dark .brand { padding:5px 10px");
+    expect(styles).toContain(".header-dark .desktop-nav a, .header-dark .hire-link { color:#f9f7f2");
+    expect(styles).toContain(".header-dark .menu-toggle { padding:8px 11px");
+    expect(page).toContain("<Header dark />");
     expect(styles).toContain(".header-dark .menu-toggle");
     expect(styles).toContain(".footer .brand-logo");
   });
