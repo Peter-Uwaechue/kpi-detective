@@ -306,3 +306,5 @@
 - [x] Set the two-profile leadership carousel’s automatic interval to two seconds while preserving its controls and motion safeguards; verified the updated interval in regression coverage.
 - [x] Confirm the desktop and mobile leadership sections show only Remi and Funmi, with the existing controls, progress indicators, and card presentation preserved.
 - [x] Ensure the compact mobile menu includes a clear explicit Home destination in addition to the logo link; verified mobile header stability, 38 tests, and production build.
+- [x] Confirm the employer-partnership form keeps its mobile presentation intact while the final submission composes a mailto draft to the Human Capital inbox with all completed employer fields.
+- [x] Route all employer-partnership form submissions and their completed form details to humancapital@willerssolutions.com through the visitor email-app fallback; verified mobile form presentation, 36 test files / 40 tests, and production build.
