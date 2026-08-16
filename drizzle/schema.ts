@@ -31,7 +31,26 @@ export const leadershipProfiles = mysqlTable("leadership_profiles", {
   updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
 });
 
+export const candidateReferrals = mysqlTable("candidate_referrals", {
+  id: int("id").autoincrement().primaryKey(),
+  jobSlug: varchar("jobSlug", { length: 180 }).notNull(),
+  jobTitle: varchar("jobTitle", { length: 260 }).notNull(),
+  referrerName: varchar("referrerName", { length: 180 }).notNull(),
+  referrerEmail: varchar("referrerEmail", { length: 320 }).notNull(),
+  candidateName: varchar("candidateName", { length: 180 }).notNull(),
+  candidateEmail: varchar("candidateEmail", { length: 320 }).notNull(),
+  candidateLinkedin: varchar("candidateLinkedin", { length: 520 }),
+  rationale: text("rationale").notNull(),
+  cvFileName: varchar("cvFileName", { length: 255 }).notNull(),
+  cvMimeType: varchar("cvMimeType", { length: 120 }).notNull(),
+  cvStorageKey: varchar("cvStorageKey", { length: 520 }).notNull(),
+  cvUrl: text("cvUrl").notNull(),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+});
+
 export type User = typeof users.$inferSelect;
 export type InsertUser = typeof users.$inferInsert;
 export type LeadershipProfileRow = typeof leadershipProfiles.$inferSelect;
 export type InsertLeadershipProfile = typeof leadershipProfiles.$inferInsert;
+export type CandidateReferralRow = typeof candidateReferrals.$inferSelect;
+export type InsertCandidateReferral = typeof candidateReferrals.$inferInsert;

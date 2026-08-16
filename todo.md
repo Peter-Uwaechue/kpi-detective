@@ -343,3 +343,4 @@
 - [x] Add a role-specific WhatsApp sharing control alongside LinkedIn and X on all vacancy detail pages, with regression and responsive verification.
 - [x] Add a Copy Link control alongside vacancy social sharing buttons, with clipboard fallback, success feedback, and responsive regression verification.
 - [x] Fix the job-search Clear Filters action so it resets the search term, location, salary, job type, and sorting state reliably.
+- [x] Add validated CV attachment support to the candidate referral form and include the uploaded file in the employer referral workflow.
