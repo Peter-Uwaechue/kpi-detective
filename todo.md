@@ -359,3 +359,5 @@
 - [x] Add shared phone, email, and name validation with blur feedback, specific inline errors, and submit blocking across all public forms.
 - [x] Create dedicated article pages with unique slugs and full content for every insight/resource teaser, then update all matching read-more links away from generic listing pages.
 - [x] Audit and correct every Insights and Resources teaser destination, adding premium dedicated content pages while preserving the screenshot-matching editorial presentation.
+- [x] Synchronize the verified premium Insights and Resources update to GitHub and Vercel production, then confirm the live deployment.
+- [x] Fix shared article-page typography and responsive header/menu spacing so every Insights and Resources note page has consistent fonts, non-overlapping controls, and reliable mobile tap targets.
