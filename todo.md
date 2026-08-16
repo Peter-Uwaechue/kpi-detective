@@ -356,3 +356,4 @@
 - [x] Ensure support-form requests go to humancapital@willerssolutions.com with readable spacing, real line breaks, and clear email-app fallback guidance.
 - [x] Standardize all public forms on the Human Capital email-draft workflow with readable line spacing, Gmail/default-mail guidance, and strict phone-number validation.
 - [x] Make every phone-number field filter non-phone text while typing and enforce strict phone-format validation across all forms.
+- [x] Add shared phone, email, and name validation with blur feedback, specific inline errors, and submit blocking across all public forms.

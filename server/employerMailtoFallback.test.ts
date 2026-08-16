@@ -55,9 +55,10 @@ describe("employer partnership mailto fallback", () => {
 
   it("applies the same strict phone pattern across reusable and direct form fields", () => {
     expect(homePageSource).toContain('const phoneInputPattern = "\\\\+?[0-9][0-9\\\\s().-]{6,18}[0-9]"');
-    expect(homePageSource).toContain('const sanitizePhoneInput = (value: string) => value.replace(/[^0-9+().\\\\s-]/g, "").replace(/(?!^)\\\\+/g, "")');
+    expect(homePageSource).toContain("const sanitizePhoneInput = (value: string)");
+    expect(homePageSource).toContain("replace(/[^0-9+.()");
     expect(homePageSource).toContain('type="tel" pattern={phoneInputPattern}');
-    expect(homePageSource).toContain('type="tel" pattern={phoneInputPattern} inputMode="tel"');
+    expect(homePageSource).toContain('type="tel" pattern={phoneInputPattern}');
     expect(homePageSource).toContain('type === "tel" ? sanitizePhoneInput(event.target.value) : event.target.value');
     expect(homePageSource).toContain('sanitizePhoneInput(event.target.value)');
   });

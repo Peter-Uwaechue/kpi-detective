@@ -282,3 +282,7 @@ button { border:0; background:none; color:inherit; }
 .referral-attachment-reminder { margin:22px 0 14px; padding:12px 14px; border-left:3px solid var(--copper); background:rgba(180,83,9,.08); color:#394d52; font-size:12px; line-height:1.55; }
 .referral-attachment-reminder strong { color:var(--emerald); font-weight:700; letter-spacing:.04em; text-transform:uppercase; }
 @media (max-width:600px) { .referral-attachment-reminder { margin-top:20px; padding:12px; font-size:11px; } }
+
+/* Inline field validation */
+.field-error { display:block; margin-top:7px; color:#9f321f; font-size:12px; line-height:1.45; font-weight:600; }
+.field[aria-invalid="true"] input, .field[aria-invalid="true"] textarea { border-bottom-color:#9f321f; box-shadow:0 1px 0 #9f321f; }

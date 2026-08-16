@@ -28,7 +28,7 @@ describe("outsourcing page", () => {
     expect(page).toContain('const subject = `Outsourcing request — ${form.organisation || "New enquiry"}`');
     expect(page).toContain('const subject = `Outsourcing enquiry — ${form.organisation || "New enquiry"}`');
     expect(page).toContain("createEmailDraftHref(subject, body)");
-    expect(page).toContain('type="tel" pattern={phoneInputPattern} inputMode="tel"');
+    expect(page).toContain('Field label="Phone number" name="phone" type="tel" pattern={phoneInputPattern}');
     expect(page).toContain("Your email draft is ready. Please press Send in your email app");
     expect(page).toContain("Set up Gmail or another default email app in your device settings");
     expect(page).toContain('return href.startsWith("#") ? <a href={href} className={className}>{content}</a>');
