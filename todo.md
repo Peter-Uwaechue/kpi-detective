@@ -366,3 +366,4 @@
 - [x] Correct every homepage service-navigation card so each destination matches its service subject and no card points to a generic or unrelated page.
 - [x] Replace public contact email with info@willerssolutions.com and update the public phone number to the verified number from nysc.willerssolutions.com across the site.
 - [x] Optimize all website images for faster loading while preserving the premium visual quality, then verify and deploy the result to Vercel.
+- [x] Add accessible interactive hover and focus effects to shared service and vacancy cards, verify responsive behavior, and deploy the result.

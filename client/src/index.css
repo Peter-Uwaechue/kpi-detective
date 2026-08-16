@@ -315,3 +315,117 @@ button { border:0; background:none; color:inherit; }
 .article-hero-copy h1 { margin:0; font-family:'Alegreya',Georgia,serif; }
 .article-hero-copy .large-copy { margin:0; font-family:'Albert Sans',Arial,sans-serif; }
 @media (max-width:800px) { .article-hero-copy { padding-top:92px; gap:28px; }.article-hero-copy .profile-back { margin-bottom:0; padding-top:0; } }
+
+/* Interactive service and vacancy cards */
+.service-card,
+.job-row {
+  will-change: transform, box-shadow;
+}
+
+.service-card {
+  transition: transform .28s var(--ease), box-shadow .28s var(--ease), border-color .22s var(--ease), opacity .28s var(--ease);
+}
+
+.service-card:hover,
+.service-card:focus-within {
+  transform: translateY(-6px) scale(1.005);
+  border-color: rgba(180,83,9,.78);
+  box-shadow: 0 18px 34px rgba(21,28,39,.14);
+}
+
+.service-card .service-image img {
+  transition: transform .42s var(--ease), filter .28s var(--ease);
+}
+
+.service-card:hover .service-image img,
+.service-card:focus-within .service-image img {
+  transform: scale(1.045);
+  filter: saturate(1.04) contrast(1.02);
+}
+
+.service-card .service-meta h3,
+.service-card .service-meta p,
+.service-card .service-meta svg {
+  transition: color .2s var(--ease), transform .2s var(--ease);
+}
+
+.service-card:hover .service-meta h3,
+.service-card:focus-within .service-meta h3 {
+  color: var(--emerald);
+  transform: translateX(4px);
+}
+
+.service-card:hover .service-meta p,
+.service-card:focus-within .service-meta p {
+  transform: translateX(4px);
+}
+
+.service-card:hover .service-meta svg,
+.service-card:focus-within .service-meta svg {
+  color: var(--emerald);
+  transform: translate(5px, 5px);
+}
+
+.job-row {
+  border: 1px solid transparent;
+  border-bottom-color: var(--line);
+  transition: transform .24s var(--ease), box-shadow .24s var(--ease), background .24s var(--ease), border-color .24s var(--ease), padding .24s var(--ease);
+}
+
+.job-row:hover,
+.job-row:focus-within {
+  padding-left: 24px;
+  transform: translateY(-3px);
+  background: var(--paper);
+  border-color: rgba(180,83,9,.38);
+  box-shadow: 0 12px 26px rgba(21,28,39,.09);
+}
+
+.job-row:hover::before,
+.job-row:focus-within::before {
+  width: 7px;
+  height: 22px;
+  top: 25px;
+  opacity: 1;
+  background: var(--copper);
+  transition: width .2s var(--ease), height .2s var(--ease), top .2s var(--ease), background .2s var(--ease);
+}
+
+.job-row h3,
+.job-row .job-card-link,
+.job-row .job-detail-link {
+  transition: color .2s var(--ease), transform .2s var(--ease), background .2s var(--ease), border-color .2s var(--ease);
+}
+
+.job-row:hover h3,
+.job-row:focus-within h3 {
+  color: var(--emerald);
+}
+
+.job-row:hover .job-detail-link,
+.job-row:focus-within .job-detail-link {
+  transform: translate(3px, 3px);
+  color: var(--emerald);
+}
+
+@media (hover: none) {
+  .service-card:hover,
+  .job-row:hover {
+    transform: none;
+    box-shadow: none;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .service-card,
+  .service-card .service-image img,
+  .service-card .service-meta h3,
+  .service-card .service-meta p,
+  .service-card .service-meta svg,
+  .job-row,
+  .job-row h3,
+  .job-row .job-card-link,
+  .job-row .job-detail-link {
+    transition: none;
+  }
+}

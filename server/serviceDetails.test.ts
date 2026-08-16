@@ -24,5 +24,10 @@ describe("service detail pages", () => {
     expect(styles).toContain(".service-detail-lead");
     expect(styles).toContain(".service-detail-focus");
     expect(styles).toContain(".service-detail-outcomes");
+    expect(styles).toContain(".service-card:hover");
+    expect(styles).toContain(".service-card:focus-within");
+    expect(styles).toContain(".job-row:hover");
+    expect(styles).toContain(".job-row:focus-within");
+    expect(styles).toContain("@media (prefers-reduced-motion: reduce)");
   });
 });
