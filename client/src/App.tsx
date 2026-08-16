@@ -8,6 +8,7 @@ import { Route, Switch } from "wouter";
 import Home from "./pages/Home";
 import NotFound from "./pages/NotFound";
 import { Head } from "./components/Head";
+import KPIDetective from "./pages/KPIDetective";
 
 export default function App() {
   return (
@@ -19,6 +20,7 @@ export default function App() {
           <ScrollManager />
           <BackToTop />
           <Switch>
+            <Route path="/kpi-detective" component={KPIDetective} />
             <Route path="/" component={Home} />
             <Route path="/leadership/hannah-uwaechue" component={Home} />
             <Route path="/leadership/remi-abubakar-bello" component={Home} />

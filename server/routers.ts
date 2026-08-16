@@ -1,6 +1,7 @@
 import { COOKIE_NAME } from "@shared/const";
 import { z } from "zod";
 import { createCandidateReferral } from "./db";
+import { invokeLLM } from "./_core/llm";
 import { getSessionCookieOptions } from "./_core/cookies";
 import { notifyOwner } from "./_core/notification";
 import { systemRouter } from "./_core/systemRouter";
@@ -35,6 +36,55 @@ export const appRouter = router({
       return {
         success: true,
       } as const;
+    }),
+  }),
+  kpi: router({
+    ask: publicProcedure.input(z.object({
+      question: z.string().trim().min(2).max(500),
+      context: z.object({
+        metricLabel: z.string().max(160),
+        summary: z.string().max(2200),
+        previousPeriod: z.string().max(40),
+        currentPeriod: z.string().max(40),
+        currencySymbol: z.string().max(4),
+        confidence: z.number().min(0).max(100),
+        causes: z.array(z.object({
+          dimension: z.string().max(160),
+          value: z.string().max(260),
+          impact: z.number(),
+          counterfactual: z.number(),
+          confidence: z.number().min(0).max(100),
+        })).max(5),
+      }),
+    })).mutation(async ({ input }) => {
+      const factSheet = JSON.stringify(input.context);
+      try {
+        const response = await invokeLLM({
+          model: "gpt-5-mini",
+          maxTokens: 650,
+          reasoning: { effort: "minimal" },
+          messages: [
+            {
+              role: "system",
+              content: "You are KPI Detective, a precise business analyst. Answer using only the supplied calculated KPI context; do not invent data, trends, customers, or causes. Write plain English for a non-technical business owner. State the relevant confidence score where possible, and keep the response concise (under 150 words). If the context cannot answer the question, say so directly and suggest a question it can answer.",
+            },
+            {
+              role: "user",
+              content: `Question: ${input.question}\n\nCalculated KPI context (aggregated only): ${factSheet}`,
+            },
+          ],
+        });
+        const content = response.choices[0]?.message.content;
+        const answer = typeof content === "string" ? content.trim() : "";
+        if (!answer) throw new Error("The analyst did not return an answer.");
+        return { answer, generated: true };
+      } catch (error) {
+        console.warn("[KPI Detective] Analyst fallback used:", error);
+        return {
+          answer: `${input.context.summary} For a deeper breakdown, ask about one of the displayed causes or use the local question suggestions.`,
+          generated: false,
+        };
+      }
     }),
   }),
   referrals: router({
