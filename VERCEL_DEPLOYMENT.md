@@ -1,6 +1,6 @@
 # Deploying Willers Solutions on Vercel
 
-This repository is prepared for Vercel's Vite static-site deployment workflow. The `vercel.json` file installs dependencies with PNPM, builds the site, serves `dist/public`, and rewrites routes to `index.html` so that all Wouter routes work when opened directly.
+This repository is prepared for Vercel's server-rendered public-site workflow. The `vercel.json` file installs dependencies with PNPM, builds the browser assets in `dist/public`, packages the SSR renderer in `dist/server-ssr`, and rewrites public requests to the `api/ssr.ts` function. Every approved public route therefore returns crawlable HTML and route-specific metadata on a direct request, then hydrates into the existing React experience.
 
 ## Connect the repository
 
@@ -9,9 +9,20 @@ This repository is prepared for Vercel's Vite static-site deployment workflow. T
 3. Keep the detected build settings from `vercel.json`, select the `main` branch for production, and deploy.
 4. In Vercel's project settings, enable automatic production deployments for pushes to `main` and preview deployments for pull requests.
 
+## SEO environment settings
+
+Set the following **Production** environment variables in Vercel Project Settings before promoting a custom production domain. These values are not credentials and must match the public site identity:
+
+| Variable | Recommended value |
+|---|---|
+| `CANONICAL_ORIGIN` | `https://willers-solution-beta.vercel.app` until the final Willers domain is connected; then use that final `https://` origin without a trailing slash. |
+| `SITE_NAME` | `Willers Solutions Limited` |
+
+`CANONICAL_ORIGIN` controls canonical URLs and the `og:url` tag, while `SITE_NAME` controls the Open Graph site name and metadata fallback. The renderer includes safe defaults, but the project settings should be updated as soon as the final public domain is selected.
+
 ## Important integration note
 
-The public corporate website is configured to deploy as a Vite single-page application. Its approved visual assets load from stable absolute published URLs, so they work from Vercel instead of resolving incorrectly as Vercel-relative `/manus-storage` paths. The repository also contains server, authentication, and database scaffolding that relies on Manus-provided services during local Manus hosting. Do not copy Manus credentials into Vercel. If you later activate server-side integrations on the public site, add Vercel-compatible serverless functions and configure only the equivalent credentials that you control in Vercel Project Settings.
+The public corporate website now uses a Vercel-compatible SSR function for page rendering. Its approved visual assets load from stable absolute published URLs, so they work from Vercel instead of resolving incorrectly as Vercel-relative `/manus-storage` paths. The repository also contains authentication and database scaffolding that relies on Manus-provided services during local Manus hosting. Do not copy Manus credentials into Vercel. If server-side integrations are activated later, configure only the equivalent credentials that you control in Vercel Project Settings.
 
 ## Updating the Vercel site
 

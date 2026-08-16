@@ -5,7 +5,7 @@ import { describe, expect, it } from "vitest";
 const projectRoot = path.resolve(import.meta.dirname, "..");
 
 describe("Vercel deployment configuration", () => {
-  it("builds the Vite site and supports direct navigation to client-side routes", async () => {
+  it("builds static assets and serves public routes through the SSR function", async () => {
     const [config, guide] = await Promise.all([
       readFile(path.join(projectRoot, "vercel.json"), "utf8"),
       readFile(path.join(projectRoot, "VERCEL_DEPLOYMENT.md"), "utf8"),
@@ -13,7 +13,10 @@ describe("Vercel deployment configuration", () => {
 
     expect(config).toContain('"buildCommand": "pnpm run build"');
     expect(config).toContain('"outputDirectory": "dist/public"');
-    expect(config).toContain('"destination": "/index.html"');
+    expect(config).toContain('"outputDirectory": "dist/public"');
+    expect(config).toContain('"api/ssr.ts"');
+    expect(config).toContain('"includeFiles": "dist/**"');
+    expect(config).toContain('"destination": "/api/ssr"');
     expect(guide).toContain("Peter-Uwaechue/Willers-solutions");
     expect(guide).toContain("push to `main`");
   });

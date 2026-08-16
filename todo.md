@@ -327,3 +327,9 @@
 - [x] Replace repeated human photography on all confirmed vacancy detail pages with distinct non-human role visuals while preserving the application flow; verified with 50 tests, production build, and mobile detail-page review.
 - [x] Audit major navigation and service-card actions, then replace inappropriate in-page anchors with dedicated routes while preserving intentional section scrolling.
 - [x] Register the new nested outsourcing destinations in the application route shell so their dedicated pages render directly.
+- [x] Audit all public routes, browser-only APIs, and the existing Vite/Express delivery path for SSR readiness.
+- [x] Add shared SSR and hydration entry points with crawler-visible route content and metadata.
+- [x] Render public routes through the Express/Vite server in development and production while retaining client-side navigation after hydration.
+- [x] Add canonical, Open Graph, Twitter, and noindex/404 metadata behavior for public and invalid routes.
+- [x] Add automated SSR verification for rendered page content, metadata, canonical URLs, and 404 responses.
+- [x] Verify SSR rendering, hydration, browser interactions, regression tests, and production build before publishing.

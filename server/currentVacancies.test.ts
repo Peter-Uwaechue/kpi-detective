@@ -50,7 +50,8 @@ describe("confirmed current vacancies", () => {
 
   it("uses per-role detail links and a CRLF-safe recruitment email draft", () => {
     expect(homePageSource).toContain('href={`/job-details?role=${job.slug}`}');
-    expect(homePageSource).toContain('new URLSearchParams(window.location.search).get("role")');
+    expect(homePageSource).toContain("const search = useSearch();");
+    expect(homePageSource).toContain("new URLSearchParams(search).get(\"role\")");
     expect(homePageSource).toContain('const recruitmentContactEmail = "recruitment@willerssolutions.com"');
     expect(homePageSource).toContain('join("\\r\\n")');
     expect(homePageSource).toContain('mailto:${recruitmentContactEmail}');

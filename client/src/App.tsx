@@ -6,6 +6,8 @@ import ScrollManager from "./components/ScrollManager";
 import { ThemeProvider } from "./contexts/ThemeContext";
 import { Route, Switch } from "wouter";
 import Home from "./pages/Home";
+import NotFound from "./pages/NotFound";
+import { Head } from "./components/Head";
 
 export default function App() {
   return (
@@ -13,6 +15,7 @@ export default function App() {
       <ThemeProvider defaultTheme="light">
         <TooltipProvider>
           <Toaster />
+          <Head />
           <ScrollManager />
           <BackToTop />
           <Switch>
@@ -24,6 +27,7 @@ export default function App() {
             <Route path="/outsourcing/enquiry" component={Home} />
             <Route path="/services/:slug" component={Home} />
             <Route path="/:rest*" component={Home} />
+            <Route component={NotFound} />
           </Switch>
         </TooltipProvider>
       </ThemeProvider>
