@@ -5,9 +5,6 @@ import BackToTop from "./components/BackToTop";
 import ScrollManager from "./components/ScrollManager";
 import { ThemeProvider } from "./contexts/ThemeContext";
 import { Route, Switch } from "wouter";
-import Home from "./pages/Home";
-import NotFound from "./pages/NotFound";
-import { Head } from "./components/Head";
 import KPIDetective from "./pages/KPIDetective";
 
 export default function App() {
@@ -16,22 +13,12 @@ export default function App() {
       <ThemeProvider defaultTheme="light">
         <TooltipProvider>
           <Toaster />
-          <Head />
           <ScrollManager />
           <BackToTop />
           <Switch>
             <Route path="/kpi-detective" component={KPIDetective} />
-            <Route path="/" component={Home} />
-            <Route path="/leadership/hannah-uwaechue" component={Home} />
-            <Route path="/leadership/remi-abubakar-bello" component={Home} />
-            <Route path="/leadership/funmi-bashorun" component={Home} />
-            <Route path="/outsourcing/solutions" component={Home} />
-            <Route path="/outsourcing/enquiry" component={Home} />
-            <Route path="/services/:slug" component={Home} />
-            <Route path="/insights/:slug" component={Home} />
-            <Route path="/resources/:slug" component={Home} />
-            <Route path="/:rest*" component={Home} />
-            <Route component={NotFound} />
+            <Route path="/" component={KPIDetective} />
+            <Route component={KPIDetective} />
           </Switch>
         </TooltipProvider>
       </ThemeProvider>
