@@ -340,3 +340,4 @@
 - [x] Verify server-rendered structured data, production build, GitHub sync, and the live Vercel vacancy output.
 - [x] Add role-specific LinkedIn and X sharing controls to vacancy detail pages with accessible labels and safe outbound URLs.
 - [x] Add regression coverage and verify sharing controls across server-rendered desktop and mobile vacancy pages.
+- [x] Add a role-specific WhatsApp sharing control alongside LinkedIn and X on all vacancy detail pages, with regression and responsive verification.

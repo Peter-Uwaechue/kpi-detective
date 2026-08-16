@@ -32,8 +32,10 @@ describe("SSR public rendering", () => {
     expect(result.html).toContain('class="job-detail-share"');
     expect(result.html).toContain("https://www.linkedin.com/sharing/share-offsite/");
     expect(result.html).toContain("https://x.com/intent/post?");
+    expect(result.html).toContain("https://wa.me/?text=");
     expect(result.html).toContain("Share Enterprise Sales Executive on LinkedIn");
     expect(result.html).toContain("Share Enterprise Sales Executive on X");
+    expect(result.html).toContain("Share Enterprise Sales Executive on WhatsApp");
   });
 
   it("renders the dedicated employer enquiry form without browser globals", async () => {
