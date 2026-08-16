@@ -319,3 +319,8 @@
 - [x] Add an immediate loading spinner and clear success message to the support request form submission flow; verified with 45 tests, a production build, and mobile form review.
 - [x] Remove the Remi and Funmi individual note forms and replace them with polished leadership-profile closing sections that require no email submission; verified with 45 tests, a production build, and mobile profile review.
 - [x] Improve leadership-page header contrast so the supplied logo, wordmark, menu icon, and MENU label remain crisp on dark backgrounds; verified with 45 tests, a production build, and desktop/mobile review.
+- [x] Collect the confirmed current-vacancy batch, remove placeholder job listings, and align job details, search, filters, sorting, and application interactions to the supplied roles; verified with 49 tests, production build, and desktop/mobile review.
+- [x] Structure all seven confirmed vacancies with complete responsibilities, requirements, qualifications, salary data where supplied, and recruitment email application instructions.
+- [x] Replace every existing placeholder job card and job-detail record with the confirmed vacancy set.
+- [x] Align location, salary, job-type, keyword search, sorting, active-listing counts, and clear-filter interactions to the confirmed vacancies.
+- [x] Validate the job-search list, each job-detail route, and email application drafts on mobile and desktop.
