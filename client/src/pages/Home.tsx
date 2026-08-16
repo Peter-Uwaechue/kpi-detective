@@ -231,9 +231,9 @@ function HomePage() {
 }
 function CorporateQuickAccess() {
   const destinations = [
-    ["01", "Recruitment & search", "Talent acquisition, executive search, and hiring support for organisations building with intent.", "/for-employers"],
-    ["02", "HR & talent advisory", "People strategy, organisation design, leadership, and everyday people practice.", "/our-services"],
-    ["03", "Outsourcing", "Flexible operational capacity, project teams, and people operations support.", "/outsourcing"],
+    ["01", "Recruitment & search", "Talent acquisition, executive search, and hiring support for organisations building with intent.", "/services/recruitment-executive-search"],
+    ["02", "HR & talent advisory", "People strategy, organisation design, leadership, and everyday people practice.", "/services/hr-advisory-organisation-design"],
+    ["03", "Outsourcing", "Flexible operational capacity, project teams, and people operations support.", "/outsourcing/solutions"],
     ["04", "Careers", "Search opportunities and take the next considered step in your career.", "/job-search"],
   ];
   return <section className="corporate-quick-access" aria-labelledby="corporate-quick-access-title"><div className="corporate-quick-access-heading"><Eyebrow>START HERE</Eyebrow><h2 id="corporate-quick-access-title">Find the part of<br /><em>Willers you need.</em></h2></div><nav className="corporate-quick-access-grid" aria-label="Corporate website areas">{destinations.map(([number, title, copy, href]) => <Link key={title} href={href}><span>{number}</span><h3>{title}</h3><p>{copy}</p><ArrowDownRight size={19} /></Link>)}</nav></section>;

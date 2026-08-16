@@ -363,3 +363,4 @@
 - [x] Fix shared article-page typography and responsive header/menu spacing so every Insights and Resources note page has consistent fonts, non-overlapping controls, and reliable mobile tap targets.
 - [x] Diagnose and restore automatic GitHub-to-Vercel deployment after each completed project checkpoint.
 - [x] Correct all three home-page scenario-card links so each opens a dedicated, subject-matched service page rather than a generic or mismatched destination.
+- [x] Correct every homepage service-navigation card so each destination matches its service subject and no card points to a generic or unrelated page.

@@ -14,6 +14,15 @@ describe("dedicated major navigation", () => {
     expect(page).not.toContain('assets.scenarioHr, "/our-services"');
   });
 
+  it("uses dedicated destinations in the homepage service-navigation section", async () => {
+    const page = await readFile(path.join(projectRoot, "client/src/pages/Home.tsx"), "utf8");
+    expect(page).toContain('"Recruitment & search", "Talent acquisition, executive search, and hiring support for organisations building with intent.", "/services/recruitment-executive-search"');
+    expect(page).toContain('"HR & talent advisory", "People strategy, organisation design, leadership, and everyday people practice.", "/services/hr-advisory-organisation-design"');
+    expect(page).toContain('"Outsourcing", "Flexible operational capacity, project teams, and people operations support.", "/outsourcing/solutions"');
+    expect(page).toContain('"Careers", "Search opportunities and take the next considered step in your career.", "/job-search"');
+    expect(page).not.toContain('"HR & talent advisory", "People strategy, organisation design, leadership, and everyday people practice.", "/our-services"');
+  });
+
   it("provides dedicated leadership and outsourcing destination routes", async () => {
     const [page, app] = await Promise.all([
       readFile(path.join(projectRoot, "client/src/pages/Home.tsx"), "utf8"),
