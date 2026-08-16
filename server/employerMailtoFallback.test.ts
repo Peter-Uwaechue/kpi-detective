@@ -45,5 +45,8 @@ describe("employer partnership mailto fallback", () => {
     expect(homePageSource).toContain('const subject = `Support request — ${formValues.name || "New note"}`');
     expect(homePageSource).toContain('"New website support request"');
     expect(homePageSource).toContain("createEmailDraftHref(subject, [");
+    expect(homePageSource).toContain("formValues.phone");
+    expect(homePageSource).toContain("Phone number:");
+    expect(homePageSource).toContain('label="Phone number" name="phone" type="tel"');
   });
 });

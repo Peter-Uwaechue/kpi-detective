@@ -314,3 +314,5 @@
 - [x] Restore the unavailable published Willers logo asset with a verified direct URL and confirm that the header logo renders correctly on mobile; 43 tests and the production build pass.
 - [x] Route support-form submissions to humancapital@willerssolutions.com through a visitor email-app draft; verified in regression coverage, build, and mobile form review.
 - [x] Ensure support-form email drafts use the shared CRLF draft builder and regression coverage so literal backslash-n text cannot return; verified with 44 tests and a production build.
+- CANCELED / superseded: Add a clear, clickable phone-contact section to the support-form confirmation state.
+- [x] Add a required Phone number input directly to the support request form and include it in the Human Capital email draft; verified with 44 tests, a production build, and mobile form review.

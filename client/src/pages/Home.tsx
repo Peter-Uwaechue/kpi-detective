@@ -593,7 +593,7 @@ function FunmiProfile() {
 }
 function ContactForm() {
   const [sent, setSent] = useState(false);
-  const [formValues, setFormValues] = useState({ name: "", email: "", support: "" });
+  const [formValues, setFormValues] = useState({ name: "", email: "", phone: "", support: "" });
   const updateField = (name: keyof typeof formValues, value: string) => setFormValues((current) => ({ ...current, [name]: value }));
   const handleSubmit = (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
@@ -603,6 +603,7 @@ function ContactForm() {
       "",
       `Name: ${formValues.name || "Not provided"}`,
       `Email address: ${formValues.email || "Not provided"}`,
+      `Phone number: ${formValues.phone || "Not provided"}`,
       "",
       `Support request: ${formValues.support || "Not provided"}`,
     ]);
@@ -615,6 +616,7 @@ function ContactForm() {
     <form className="contact-form" onSubmit={handleSubmit}>
       <Field label="Your name" name="name" value={formValues.name} onChange={(name, value) => updateField(name as keyof typeof formValues, value)} />
       <Field label="Email address" name="email" type="email" value={formValues.email} onChange={(name, value) => updateField(name as keyof typeof formValues, value)} />
+      <Field label="Phone number" name="phone" type="tel" value={formValues.phone} onChange={(name, value) => updateField(name as keyof typeof formValues, value)} />
       <Field label="What would you like support with?" name="support" value={formValues.support} onChange={(name, value) => updateField(name as keyof typeof formValues, value)} wide area />
       <button className="editorial-button" type="submit">Send your note <ArrowDownRight size={18} /></button>
     </form>
