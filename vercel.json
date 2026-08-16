@@ -5,7 +5,7 @@
   "buildCommand": "pnpm run build",
   "outputDirectory": "dist/public",
   "functions": {
-    "api/ssr.ts": {
+    "api/ssr.js": {
       "includeFiles": "dist/**"
     }
   },

@@ -14,7 +14,7 @@ describe("Vercel deployment configuration", () => {
     expect(config).toContain('"buildCommand": "pnpm run build"');
     expect(config).toContain('"outputDirectory": "dist/public"');
     expect(config).toContain('"outputDirectory": "dist/public"');
-    expect(config).toContain('"api/ssr.ts"');
+    expect(config).toContain('"api/ssr.js"');
     expect(config).toContain('"includeFiles": "dist/**"');
     expect(config).toContain('"destination": "/api/ssr"');
     expect(guide).toContain("Peter-Uwaechue/Willers-solutions");

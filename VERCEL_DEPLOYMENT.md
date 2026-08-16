@@ -1,6 +1,6 @@
 # Deploying Willers Solutions on Vercel
 
-This repository is prepared for Vercel's server-rendered public-site workflow. The `vercel.json` file installs dependencies with PNPM, builds the browser assets in `dist/public`, packages the SSR renderer in `dist/server-ssr`, and rewrites public requests to the `api/ssr.ts` function. Every approved public route therefore returns crawlable HTML and route-specific metadata on a direct request, then hydrates into the existing React experience.
+This repository is prepared for Vercel's server-rendered public-site workflow. The `vercel.json` file installs dependencies with PNPM, builds the browser assets in `dist/public`, packages the SSR renderer in `dist/server-ssr`, and rewrites public requests to the `api/ssr.js` function. Every approved public route therefore returns crawlable HTML and route-specific metadata on a direct request, then hydrates into the existing React experience.
 
 ## Connect the repository
 
