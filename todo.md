@@ -333,3 +333,4 @@
 - [x] Add canonical, Open Graph, Twitter, and noindex/404 metadata behavior for public and invalid routes.
 - [x] Add automated SSR verification for rendered page content, metadata, canonical URLs, and 404 responses.
 - [x] Verify SSR rendering, hydration, browser interactions, regression tests, and production build before publishing.
+- [x] Investigate the reported Vercel production-deployment failure, distinguish it from superseded migration attempts, and verify the current live production route.
