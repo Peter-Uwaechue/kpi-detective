@@ -429,3 +429,34 @@ button { border:0; background:none; color:inherit; }
     transition: none;
   }
 }
+
+/* Tactile feedback for touch users: brief press confirmation without sticky hover states. */
+.service-card-link,
+.job-card-link,
+.job-detail-link {
+  touch-action: manipulation;
+  -webkit-tap-highlight-color: transparent;
+}
+
+@media (hover: none) and (pointer: coarse) {
+  .service-card:has(.service-card-link:active),
+  .job-row:has(a:active) {
+    transform: scale(.985);
+    box-shadow: 0 4px 12px rgba(21,28,39,.12);
+    transition: transform .12s var(--ease), box-shadow .12s var(--ease);
+  }
+
+  .service-card:has(.service-card-link:active) .service-meta svg,
+  .job-row:has(a:active) .job-detail-link {
+    transform: translate(3px, 3px) scale(.94);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .service-card:has(.service-card-link:active),
+  .job-row:has(a:active) {
+    transform: none;
+    box-shadow: none;
+    transition: none;
+  }
+}

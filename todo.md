@@ -367,3 +367,4 @@
 - [x] Replace public contact email with info@willerssolutions.com and update the public phone number to the verified number from nysc.willerssolutions.com across the site.
 - [x] Optimize all website images for faster loading while preserving the premium visual quality, then verify and deploy the result to Vercel.
 - [x] Add accessible interactive hover and focus effects to shared service and vacancy cards, verify responsive behavior, and deploy the result.
+- [x] Add a brief accessible pressed-state animation for mobile taps on service and vacancy cards, verify reduced-motion behavior, and deploy the result.

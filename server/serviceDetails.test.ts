@@ -29,5 +29,8 @@ describe("service detail pages", () => {
     expect(styles).toContain(".job-row:hover");
     expect(styles).toContain(".job-row:focus-within");
     expect(styles).toContain("@media (prefers-reduced-motion: reduce)");
+    expect(styles).toContain(".service-card:has(.service-card-link:active)");
+    expect(styles).toContain(".job-row:has(a:active)");
+    expect(styles).toContain("touch-action: manipulation");
   });
 });
