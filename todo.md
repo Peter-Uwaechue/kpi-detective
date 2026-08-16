@@ -311,3 +311,4 @@
 - [x] Correct the employer-form mailto payload so email clients receive real line breaks rather than literal backslash-n characters; verified with 42 tests and a production build.
 - [x] Replace the public Human Capital email address on the employer success page with a private, clear next-step confirmation; verified with 42 tests and a production build.
 - [x] Add a clear fallback instruction for employer-form visitors whose device has no default email app configured; verified with 43 tests, a production build, and mobile form review.
+- [x] Restore the unavailable published Willers logo asset with a verified direct URL and confirm that the header logo renders correctly on mobile; 43 tests and the production build pass.

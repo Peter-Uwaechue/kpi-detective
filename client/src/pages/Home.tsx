@@ -34,7 +34,7 @@ const assets = {
   leadershipFunmi: publishedAsset("funmi-bashorun-colour-rectangular_aba3de2d.png"),
   wordmarkDark: publishedAsset("willers-wordmark-dark_6d9fc381.svg"),
   wordmarkLight: publishedAsset("willers-wordmark-light_a0f743be.svg"),
-  mark: publishedAsset("willers-solutions-limited-logo-transparent-exact_9ea212a2.png"),
+  mark: "https://files.manuscdn.com/user_upload_by_module/session_file/310519663078623467/JxGlgVxeIGKRvwFP.png",
   outsourcingHero: publishedAsset("willers-local-workforce_0b686b00.jpg"),
   outsourcingOperations: publishedAsset("willers-lagos-client-brief_75e51182.jpeg"),
   outsourcingManaged: publishedAsset("willers-workforce-team-optimized_c550d3f0.webp"),
