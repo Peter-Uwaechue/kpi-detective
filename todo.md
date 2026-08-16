@@ -338,3 +338,5 @@
 - [x] Generate route-specific JobPosting JSON-LD for every confirmed vacancy while omitting unverified optional details.
 - [x] Add regression coverage for job structured-data completeness, salary handling, location formatting, and safe JSON serialization.
 - [x] Verify server-rendered structured data, production build, GitHub sync, and the live Vercel vacancy output.
+- [x] Add role-specific LinkedIn and X sharing controls to vacancy detail pages with accessible labels and safe outbound URLs.
+- [x] Add regression coverage and verify sharing controls across server-rendered desktop and mobile vacancy pages.

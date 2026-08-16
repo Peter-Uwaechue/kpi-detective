@@ -29,6 +29,11 @@ describe("SSR public rendering", () => {
     expect(result.html).toContain("Enterprise Sales Executive");
     expect(result.html).toContain("Drive customer acquisition");
     expect(result.head.canonicalPath).toBe("/job-details?role=enterprise-sales-executive");
+    expect(result.html).toContain('class="job-detail-share"');
+    expect(result.html).toContain("https://www.linkedin.com/sharing/share-offsite/");
+    expect(result.html).toContain("https://x.com/intent/post?");
+    expect(result.html).toContain("Share Enterprise Sales Executive on LinkedIn");
+    expect(result.html).toContain("Share Enterprise Sales Executive on X");
   });
 
   it("renders the dedicated employer enquiry form without browser globals", async () => {
