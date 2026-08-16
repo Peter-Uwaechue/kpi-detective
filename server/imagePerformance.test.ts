@@ -14,8 +14,11 @@ describe("image performance", () => {
     expect(document).toContain('rel="preload" as="image"');
     expect(document).toContain('fetchpriority="high"');
     expect(page).toContain('function DeferredImage');
-    expect(page).toContain('loading="lazy"');
+    expect(page).toContain('loading={priority ? "eager" : "lazy"}');
     expect(page).toContain('decoding="async"');
+    expect(page).toContain('fetchPriority={priority ? "high" : "low"}');
+    expect(page).toContain('loading={priority ? "eager" : "lazy"}');
+    expect(page).toContain('priority />');
     expect(page).toContain('willers-workforce-team-optimized_c550d3f0.webp');
   });
 });
