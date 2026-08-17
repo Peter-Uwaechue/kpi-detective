@@ -64,6 +64,7 @@ type ReviewRow = {
 
 const text = (value: unknown) => value === null || value === undefined ? "" : String(value).replace(/\u00a0/g, " ").trim();
 const normalise = (value: unknown) => text(value).replace(/[._-]+/g, " ").replace(/\s+/g, " ").trim().toLowerCase();
+const compactCategory = (value: unknown) => normalise(value).replace(/[^a-z0-9]+/g, "");
 const title = (value: string) => value.toLowerCase().replace(/\b\w/g, letter => letter.toUpperCase());
 const missing = (value: unknown) => ["", "n/a", "na", "null", "none", "-", "undefined", "(blank)"].includes(normalise(value));
 const headerScore = (name: string, terms: string[]) => terms.reduce((sum, term) => sum + (normalise(name) === term ? 2 : normalise(name).includes(term) ? 1 : 0), 0);
@@ -315,12 +316,20 @@ const similarity = (first: string, second: string) => {
   return length ? 1 - levenshtein(first, second) / length : 1;
 };
 
-const knownRegionAlias = (value: string, column: string) => {
-  if (!/(region|state|city|location|area)/.test(normalise(column))) return null;
-  const compact = normalise(value).replace(/\s/g, "");
-  if (["ny", "nyc", "newyork"].includes(compact)) return "New York";
-  if (["la", "losangeles"].includes(compact)) return "Los Angeles";
-  if (["uk", "unitedkingdom", "greatbritain"].includes(compact)) return "United Kingdom";
+const knownCategoryAlias = (value: string, column: string) => {
+  const compact = compactCategory(value);
+  const columnName = normalise(column);
+  if (/(region|state|city|location|area)/.test(columnName)) {
+    if (["ny", "nyc", "newyork"].includes(compact)) return "New York";
+    if (["la", "losangeles"].includes(compact)) return "Los Angeles";
+    if (["uk", "unitedkingdom", "greatbritain"].includes(compact)) return "United Kingdom";
+    if (["eastcoast", "ecoast"].includes(compact)) return "East Coast";
+    if (["westcoast", "wcoast"].includes(compact)) return "West Coast";
+  }
+  if (/(channel|source|platform|medium)/.test(columnName)) {
+    if (["online", "web", "website", "webstore", "ecommerce", "ecommercewebsite"].includes(compact)) return "Online";
+    if (["instore", "retailstore", "physicalstore", "store"].includes(compact)) return "In Store";
+  }
   return null;
 };
 
@@ -373,9 +382,9 @@ function applyFuzzyCategoryReview(rows: ReviewRow[], profiles: ColumnProfile[], 
     if (values.length > MAX_FUZZY_CATEGORY_VALUES) continue;
     const replacementByValue = new Map<string, string>();
     values.sort((left, right) => (frequency.get(left) ?? 0) - (frequency.get(right) ?? 0) || left.localeCompare(right)).forEach(value => {
-      const alias = knownRegionAlias(value, profile.name);
+      const alias = knownCategoryAlias(value, profile.name);
       const candidates = values.filter(candidate => candidate !== value && candidate.length >= 4 && value.length >= 4 && (frequency.get(candidate) ?? 0) >= (frequency.get(value) ?? 0));
-      const fuzzy = candidates.map(candidate => ({ candidate, score: similarity(normalise(value), normalise(candidate)) })).sort((left, right) => right.score - left.score || left.candidate.localeCompare(right.candidate))[0];
+      const fuzzy = candidates.map(candidate => ({ candidate, score: similarity(compactCategory(value), compactCategory(candidate)) })).sort((left, right) => right.score - left.score || left.candidate.localeCompare(right.candidate))[0];
       const replacement = alias ?? (fuzzy && fuzzy.score >= 0.93 ? fuzzy.candidate : null);
       if (replacement && replacement !== value) replacementByValue.set(value, replacement);
     });
