@@ -145,3 +145,10 @@
 .dark-mode .outlier-sensitivity { border-color: #755e31; color: #f0d794; background: #4a3b20; }
 .dark-mode .outlier-sensitivity p, .dark-mode .outlier-sensitivity button { color: #efd899; }
 @media (max-width: 640px) { .outlier-sensitivity { grid-template-columns: 24px 1fr; }.outlier-sensitivity button { grid-column: 2; justify-self: start; } }
+
+.adjustment-badge { display: inline-flex; align-items: center; margin-left: 5px; padding: 2px 5px; border: 1px solid #d5ab55; border-radius: 999px; color: #815b14; background: #fff3d5; font-size: 8px; font-weight: 800; letter-spacing: .04em; line-height: 1.1; text-transform: uppercase; vertical-align: middle; }
+.counterfactual-basis { margin: 5px 0 10px; color: #7a8790; font-size: 10px; line-height: 1.35; }
+.counterfactual-basis b { color: inherit; font-weight: 750; }
+.contribution-note { margin: -4px 0 8px; color: #6e7c84; font-size: 11px; line-height: 1.45; }
+.dark-mode .adjustment-badge { border-color: #80652c; color: #f3d594; background: #4a3b20; }
+.dark-mode .counterfactual-basis, .dark-mode .contribution-note { color: #aebcc2; }
