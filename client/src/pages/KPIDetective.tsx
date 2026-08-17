@@ -65,6 +65,9 @@ const stageDetails: Record<Exclude<Stage, "results">, { step: string; label: str
   review: { step: "03", label: "Review quality" },
 };
 
+const MAX_UPLOAD_BYTES = 50 * 1024 * 1024;
+const MAX_UPLOAD_LABEL = "50MB";
+
 const currency = (value: number, symbol = "") => formatMetric(value, symbol);
 const signedCurrency = (value: number, symbol = "") => `${value > 0 ? "+" : value < 0 ? "−" : ""}${currency(Math.abs(value), symbol)}`;
 const changeText = (value: number) => `${value > 0 ? "+" : ""}${value.toFixed(1)}%`;
@@ -254,6 +257,12 @@ export default function KPIDetective() {
 
   const handleFile = async (file?: File) => {
     if (!file) return;
+    if (file.size > MAX_UPLOAD_BYTES) {
+      setStage("upload");
+      setFileName(file.name);
+      setError(`File exceeds ${MAX_UPLOAD_LABEL} — please upload a smaller file for now.`);
+      return;
+    }
     if (authLoading) { setError("Checking your secure upload session. Please try again in a moment."); return; }
     if (!isAuthenticated) { setError("Sign in to upload and keep this private backend import linked to your account."); return; }
     const extension = file.name.split(".").pop()?.toLowerCase();

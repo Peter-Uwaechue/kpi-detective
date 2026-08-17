@@ -12,6 +12,7 @@ import { storagePut } from "./storage";
 
 const recruitmentContactEmail = "recruitment@willerssolutions.com";
 const MAX_CV_BYTES = 6 * 1024 * 1024;
+const MAX_KPI_UPLOAD_BYTES = 50 * 1024 * 1024;
 const MAX_CV_BASE64_LENGTH = Math.ceil(MAX_CV_BYTES / 3) * 4;
 const cvMimeTypes = [
   "application/pdf",
@@ -48,6 +49,7 @@ export const appRouter = router({
     })).mutation(async ({ input, ctx }) => {
       const extension = input.fileName.split(".").pop()?.toLowerCase();
       if (!extension || !["csv", "xlsx"].includes(extension)) throw new Error("Large-file imports support CSV and XLSX. Convert legacy XLS files before upload.");
+      if (input.fileBytes > MAX_KPI_UPLOAD_BYTES) throw new Error("File exceeds 50MB — please upload a smaller file for now.");
       const importId = globalThis.crypto.randomUUID();
       const upload = await createImportUploadUrl({ importId, fileName: input.fileName, contentType: input.contentType });
       await createKpiImport({
@@ -67,6 +69,7 @@ export const appRouter = router({
       if (!job) throw new Error("Import job was not found.");
       const object = await getImportObjectInfo(job.storageKey);
       if (!object.bytes) throw new Error("The uploaded file is empty or object storage has not finished receiving it.");
+      if (object.bytes > MAX_KPI_UPLOAD_BYTES) throw new Error("File exceeds 50MB — please upload a smaller file for now.");
       await updateKpiImport(input.importId, { status: "queued", fileBytes: object.bytes, contentType: object.contentType, queuedAt: new Date(), errorMessage: null });
       return { importId: input.importId, status: "queued" as const, bytes: object.bytes };
     }),
