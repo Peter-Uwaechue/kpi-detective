@@ -318,6 +318,17 @@ function analysisFromAggregates(input: { aggregates: AnalysisAggregate[]; profil
   return { metric: metric.name, metricLabel: metric.name, currencySymbol: /revenue|sales|amount|value|income|turnover|purchase|spend|price|cost|profit/i.test(metric.name) ? "$" : "", dateColumn: date.name, previousPeriod, currentPeriod, previousTotal, currentTotal, change, changePercent, excludedMetricRows: 0, trend: periods.slice(-8).map(period => ({ period, total: totals.get(period) ?? 0 })), causes, confidence, summary, totalRowsUsed: input.usableRows };
 }
 
+function fullCauseImpact(aggregates: AnalysisAggregate[], metricColumn: string, dimension: string, value: string, previousPeriod: string, currentPeriod: string) {
+  let previous = 0;
+  let current = 0;
+  aggregates.forEach(item => {
+    if (item.metricColumn !== metricColumn || item.dimension !== dimension || item.segment !== value) return;
+    if (item.period === previousPeriod) previous += Number(item.metricTotal);
+    if (item.period === currentPeriod) current += Number(item.metricTotal);
+  });
+  return current - previous;
+}
+
 const logsFromStats = (stats: WorkerStats) => [
   { key: "duplicates", title: "Exact duplicates excluded", detail: "Exact cleaned-row duplicates are retained for review but excluded from the default calculation.", count: stats.exactDuplicates, severity: stats.exactDuplicates ? "success" : "info" },
   { key: "possible", title: "Possible duplicates flagged", detail: "Rows sharing customer, date, and KPI value are kept for your decision.", count: stats.possibleDuplicates, severity: stats.possibleDuplicates ? "warning" : "info" },
@@ -529,7 +540,7 @@ async function recalculateFromStoredRows(importId: string, profiles: ColumnProfi
       const outlierExcludedAnalysis = analysisFromAggregates({ aggregates: Array.from(withoutOutliers.aggregateMap.values()), profiles, usableRows: withoutOutliers.usableRows });
       const baselinePrimary = baselineAnalysis.causes[0] ?? null;
       const outlierExcludedPrimary = outlierExcludedAnalysis.causes[0] ?? null;
-      const baselinePrimaryWithoutOutliers = baselinePrimary ? outlierExcludedAnalysis.causes.find(cause => cause.dimension === baselinePrimary.dimension && cause.value === baselinePrimary.value)?.impact ?? 0 : 0;
+      const baselinePrimaryWithoutOutliers = baselinePrimary ? fullCauseImpact(Array.from(withoutOutliers.aggregateMap.values()), metric.name, baselinePrimary.dimension, baselinePrimary.value, baselineAnalysis.previousPeriod, baselineAnalysis.currentPeriod) : 0;
       const outlierImpactOnBaselinePrimary = baselinePrimary ? baselinePrimary.impact - baselinePrimaryWithoutOutliers : 0;
       const explanationChanged = Boolean(baselinePrimary && (!outlierExcludedPrimary || baselinePrimary.dimension !== outlierExcludedPrimary.dimension || baselinePrimary.value !== outlierExcludedPrimary.value || Math.abs(outlierImpactOnBaselinePrimary) >= Math.max(1, Math.abs(baselinePrimary.impact) * 0.5)));
       const outlierSensitivity = {
