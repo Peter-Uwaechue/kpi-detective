@@ -1,8 +1,9 @@
 import { COOKIE_NAME } from "@shared/const";
 import { z } from "zod";
 import { createCandidateReferral } from "./db";
-import { createKpiImport, getKpiImport, getPreviewPage, updateKpiImport } from "./kpiImportDb";
+import { createKpiImport, getKpiImport, getPreviewPage, resetKpiImportData, updateKpiImport } from "./kpiImportDb";
 import { createImportUploadUrl, getImportObjectInfo } from "./kpiImportStorage";
+import { processKpiImport } from "./kpiImportWorker";
 import { invokeLLM } from "./_core/llm";
 import { getSessionCookieOptions } from "./_core/cookies";
 import { notifyOwner } from "./_core/notification";
@@ -12,7 +13,10 @@ import { storagePut } from "./storage";
 
 const recruitmentContactEmail = "recruitment@willerssolutions.com";
 const MAX_CV_BYTES = 6 * 1024 * 1024;
-const MAX_KPI_UPLOAD_BYTES = 50 * 1024 * 1024;
+// The no-worker deployment processes imports synchronously inside a server request.
+// Keep this deliberately small so uploads complete reliably without a persistent worker.
+const MAX_KPI_UPLOAD_BYTES = 1 * 1024 * 1024;
+const KPI_UPLOAD_LIMIT_MESSAGE = "File exceeds 1MB — please upload a smaller file for now.";
 const MAX_CV_BASE64_LENGTH = Math.ceil(MAX_CV_BYTES / 3) * 4;
 const cvMimeTypes = [
   "application/pdf",
@@ -48,8 +52,8 @@ export const appRouter = router({
       fileBytes: z.number().int().positive().max(Number.MAX_SAFE_INTEGER),
     })).mutation(async ({ input, ctx }) => {
       const extension = input.fileName.split(".").pop()?.toLowerCase();
-      if (!extension || !["csv", "xlsx"].includes(extension)) throw new Error("Large-file imports support CSV and XLSX. Convert legacy XLS files before upload.");
-      if (input.fileBytes > MAX_KPI_UPLOAD_BYTES) throw new Error("File exceeds 50MB — please upload a smaller file for now.");
+      if (!extension || !["csv", "xlsx"].includes(extension)) throw new Error("KPI Detective supports CSV and XLSX files. Convert legacy XLS files before upload.");
+      if (input.fileBytes > MAX_KPI_UPLOAD_BYTES) throw new Error(KPI_UPLOAD_LIMIT_MESSAGE);
       const importId = globalThis.crypto.randomUUID();
       const upload = await createImportUploadUrl({ importId, fileName: input.fileName, contentType: input.contentType });
       await createKpiImport({
@@ -69,9 +73,16 @@ export const appRouter = router({
       if (!job) throw new Error("Import job was not found.");
       const object = await getImportObjectInfo(job.storageKey);
       if (!object.bytes) throw new Error("The uploaded file is empty or object storage has not finished receiving it.");
-      if (object.bytes > MAX_KPI_UPLOAD_BYTES) throw new Error("File exceeds 50MB — please upload a smaller file for now.");
-      await updateKpiImport(input.importId, { status: "queued", fileBytes: object.bytes, contentType: object.contentType, queuedAt: new Date(), errorMessage: null });
-      return { importId: input.importId, status: "queued" as const, bytes: object.bytes };
+      if (object.bytes > MAX_KPI_UPLOAD_BYTES) throw new Error(KPI_UPLOAD_LIMIT_MESSAGE);
+      await updateKpiImport(input.importId, { fileBytes: object.bytes, contentType: object.contentType, errorMessage: null });
+      try {
+        await processKpiImport(input.importId);
+        return { importId: input.importId, status: "complete" as const, bytes: object.bytes };
+      } catch (error) {
+        const errorMessage = error instanceof Error ? error.message.slice(0, 4000) : "The import could not be processed.";
+        await updateKpiImport(input.importId, { status: "failed", errorMessage, completedAt: new Date() });
+        throw new Error(errorMessage);
+      }
     }),
     get: protectedProcedure.input(z.object({ importId: z.string().uuid() })).query(async ({ input, ctx }) => {
       const job = await getKpiImport(input.importId, ctx.user.openId);
@@ -87,8 +98,19 @@ export const appRouter = router({
       const job = await getKpiImport(input.importId, ctx.user.openId);
       if (!job) throw new Error("Import job was not found.");
       if (!["failed", "cancelled"].includes(job.status)) throw new Error("Only failed or cancelled imports can be retried.");
-      await updateKpiImport(input.importId, { status: "queued", queuedAt: new Date(), errorMessage: null });
-      return { importId: input.importId, status: "queued" as const };
+      if (job.fileBytes > MAX_KPI_UPLOAD_BYTES) {
+        await updateKpiImport(input.importId, { status: "failed", errorMessage: KPI_UPLOAD_LIMIT_MESSAGE, completedAt: new Date() });
+        throw new Error(KPI_UPLOAD_LIMIT_MESSAGE);
+      }
+      await resetKpiImportData(input.importId);
+      try {
+        await processKpiImport(input.importId);
+        return { importId: input.importId, status: "complete" as const };
+      } catch (error) {
+        const errorMessage = error instanceof Error ? error.message.slice(0, 4000) : "The import could not be processed.";
+        await updateKpiImport(input.importId, { status: "failed", errorMessage, completedAt: new Date() });
+        throw new Error(errorMessage);
+      }
     }),
   }),
   kpi: router({
