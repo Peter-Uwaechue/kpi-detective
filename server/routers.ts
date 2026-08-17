@@ -13,10 +13,11 @@ import { storagePut } from "./storage";
 
 const recruitmentContactEmail = "recruitment@willerssolutions.com";
 const MAX_CV_BYTES = 6 * 1024 * 1024;
-// The no-worker deployment processes imports synchronously inside a server request.
-// Keep this deliberately small so uploads complete reliably without a persistent worker.
-const MAX_KPI_UPLOAD_BYTES = 1 * 1024 * 1024;
-const KPI_UPLOAD_LIMIT_MESSAGE = "File exceeds 1MB — please upload a smaller file for now.";
+// The no-worker deployment processes imports synchronously inside a Vercel Hobby function.
+// These limits are based on real end-to-end import benchmarks and preserve timeout headroom.
+const MAX_KPI_UPLOAD_BYTES = 5 * 1024 * 1024;
+const MAX_KPI_IMPORT_ROWS = 100_000;
+const KPI_UPLOAD_LIMIT_MESSAGE = "File exceeds 5MB — please upload a smaller file for now.";
 const MAX_CV_BASE64_LENGTH = Math.ceil(MAX_CV_BYTES / 3) * 4;
 const cvMimeTypes = [
   "application/pdf",
@@ -76,7 +77,7 @@ export const appRouter = router({
       if (object.bytes > MAX_KPI_UPLOAD_BYTES) throw new Error(KPI_UPLOAD_LIMIT_MESSAGE);
       await updateKpiImport(input.importId, { fileBytes: object.bytes, contentType: object.contentType, errorMessage: null });
       try {
-        await processKpiImport(input.importId);
+        await processKpiImport(input.importId, { maxSourceRows: MAX_KPI_IMPORT_ROWS });
         return { importId: input.importId, status: "complete" as const, bytes: object.bytes };
       } catch (error) {
         const errorMessage = error instanceof Error ? error.message.slice(0, 4000) : "The import could not be processed.";
@@ -104,7 +105,7 @@ export const appRouter = router({
       }
       await resetKpiImportData(input.importId);
       try {
-        await processKpiImport(input.importId);
+        await processKpiImport(input.importId, { maxSourceRows: MAX_KPI_IMPORT_ROWS });
         return { importId: input.importId, status: "complete" as const };
       } catch (error) {
         const errorMessage = error instanceof Error ? error.message.slice(0, 4000) : "The import could not be processed.";

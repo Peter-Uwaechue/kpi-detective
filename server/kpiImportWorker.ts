@@ -20,7 +20,7 @@ import { getImportObjectStream } from "./kpiImportStorage";
 
 const BATCH_SIZE = Math.max(100, Math.min(Number(process.env.KPI_IMPORT_BATCH_SIZE || 1000), 5000));
 const UNKNOWN = "Unknown";
-const REVENUE_TERMS = ["revenue", "sales", "amount", "total", "value", "gmv", "income", "turnover", "net"];
+const REVENUE_TERMS = ["revenue", "sales", "amount", "total", "value", "gmv", "income", "turnover", "net", "purchase", "spend", "price", "cost", "profit"];
 const DATE_TERMS = ["date", "day", "time", "month", "week", "created", "ordered", "purchased", "transaction"];
 const CATEGORY_TERMS = ["region", "state", "city", "location", "product", "category", "channel", "customer", "client", "segment", "store", "department", "brand", "type"];
 
@@ -79,8 +79,8 @@ const inferProfiles = (headers: string[], samples: RawRecord[]): ColumnProfile[]
   const dateRate = values.filter(value => parseDate(value) !== null).length / values.length;
   const distinctRate = new Set(values.map(text)).size / values.length;
   if (dateRate >= .72 && (headerScore(name, DATE_TERMS) > 0 || numericRate < .98)) return { name, kind: "date", confidence: Math.round(Math.min(99, dateRate * 84 + headerScore(name, DATE_TERMS) * 7)), datePreference: "day-first" };
-  if (numericRate >= .72) return { name, kind: "number", confidence: Math.round(Math.min(99, numericRate * 84 + headerScore(name, REVENUE_TERMS) * 5)) };
   if (/\b(id|order|invoice|transaction|reference|sku|code)\b/i.test(name) || (distinctRate > .92 && values.length > 7 && /\d/.test(values.map(text).join("")))) return { name, kind: "identifier", confidence: 82 };
+  if (numericRate >= .72) return { name, kind: "number", confidence: Math.round(Math.min(99, numericRate * 84 + headerScore(name, REVENUE_TERMS) * 5)) };
   if (distinctRate <= .9 || headerScore(name, CATEGORY_TERMS) > 0) return { name, kind: "category", confidence: Math.round(Math.min(95, 70 + headerScore(name, CATEGORY_TERMS) * 6)) };
   return { name, kind: "unknown", confidence: 48 };
 });
@@ -240,7 +240,7 @@ const logsFromStats = (stats: WorkerStats): CleaningLog[] => [
   { key: "missing", title: "Missing numeric values flagged", detail: "Missing numeric values remain in the preview but do not affect the KPI calculation.", count: stats.missingNumeric, severity: stats.missingNumeric ? "warning" : "info" },
 ];
 
-export async function processKpiImport(importId: string, options: { claimed?: boolean } = {}) {
+export async function processKpiImport(importId: string, options: { claimed?: boolean; maxSourceRows?: number } = {}) {
   const job = await getKpiImport(importId);
   if (!job) throw new Error("Import job was not found.");
   if (options.claimed && job.attemptCount > 1) await resetKpiImportData(importId);
@@ -248,10 +248,14 @@ export async function processKpiImport(importId: string, options: { claimed?: bo
   const profileSamples: RawRecord[] = [];
   let headers: string[] = [];
   const firstStream = await getImportObjectStream(job.storageKey);
+  let profiledRows = 0;
   for await (const row of streamRecords(job.originalFileName, firstStream)) {
+    profiledRows++;
+    if (options.maxSourceRows && profiledRows > options.maxSourceRows) {
+      throw new Error(`File exceeds the ${options.maxSourceRows.toLocaleString()}-row limit for this no-worker version. Please upload a smaller file.`);
+    }
     if (!headers.length) headers = Object.keys(row);
     if (profileSamples.length < 5000) profileSamples.push(row);
-    else break;
   }
   if (!headers.length) throw new Error("The uploaded spreadsheet has no header row or data records.");
   const profiles = inferProfiles(headers, profileSamples);
