@@ -263,7 +263,16 @@ function aggregateRow(cleaned: RawRecord, profiles: ColumnProfile[], metric: Col
   return true;
 }
 
-function analysisFromAggregates(input: { aggregates: Awaited<ReturnType<typeof getImportAggregates>>; profiles: ColumnProfile[]; usableRows: number }): KpiAnalysis {
+type AnalysisAggregate = {
+  metricColumn: string;
+  period: string;
+  dimension: string;
+  segment: string;
+  metricTotal: number | string;
+  recordCount: number | bigint;
+};
+
+function analysisFromAggregates(input: { aggregates: AnalysisAggregate[]; profiles: ColumnProfile[]; usableRows: number }): KpiAnalysis {
   const metric = findMetric(input.profiles);
   const date = findDate(input.profiles);
   if (!metric || !date) throw new Error("We could not identify both a reliable date column and numeric KPI. Ensure at least 75% of non-empty values in each field are valid dates or amounts.");
@@ -487,14 +496,20 @@ async function recalculateFromStoredRows(importId: string, profiles: ColumnProfi
   const metric = findMetric(profiles);
   const date = findDate(profiles);
   if (!metric || !date) throw new Error("The import no longer has a reliable numeric KPI and date column.");
+  const buildAggregateMap = (includeOutliers: boolean) => {
+    const aggregateMap = new Map<string, AggregateWrite>();
+    let usableRows = 0;
+    rows.filter(row => !row.excluded && (includeOutliers || !row.isOutlier)).forEach(row => {
+      if (aggregateRow(row.cleanedValues, profiles, metric, date, aggregateMap)) usableRows++;
+    });
+    return { aggregateMap, usableRows };
+  };
+  const baseline = buildAggregateMap(true);
   await clearImportAggregates(importId);
-  const aggregateMap = new Map<string, AggregateWrite>();
-  let usableRows = 0;
-  rows.filter(row => !row.excluded).forEach(row => { if (aggregateRow(row.cleanedValues, profiles, metric, date, aggregateMap)) usableRows++; });
-  await writeAggregateMap(importId, aggregateMap);
+  await writeAggregateMap(importId, baseline.aggregateMap);
   const stats: WorkerStats = {
     sourceRows: rows.length,
-    usableRows,
+    usableRows: baseline.usableRows,
     exactDuplicates: rows.filter(row => row.exactDuplicate).length,
     missingNumeric: rows.flatMap(row => row.issues).filter(issue => issue.type === "missing").length,
     invalidNumeric: rows.flatMap(row => row.issues).filter(issue => issue.type === "invalid-number").length,
@@ -505,8 +520,41 @@ async function recalculateFromStoredRows(importId: string, profiles: ColumnProfi
     possibleDuplicates: rows.filter(row => row.possibleDuplicate).length,
     outliers: rows.filter(row => row.isOutlier).length,
   };
-  const analysis = analysisFromAggregates({ aggregates: await getImportAggregates(importId), profiles, usableRows });
-  await updateKpiImport(importId, { status: "complete", sourceRowCount: rows.length, usableRowCount: usableRows, previewRowCount: rows.length, columnsJson: profiles, cleaningSummaryJson: logsFromStats(stats), analysisJson: analysis, workerCheckpointJson: { phase: "complete", processedRows: rows.length, recalculated: true }, completedAt: new Date() });
+  const baselineAnalysis = analysisFromAggregates({ aggregates: Array.from(baseline.aggregateMap.values()), profiles, usableRows: baseline.usableRows });
+  const flaggedOutliers = rows.filter(row => !row.excluded && row.isOutlier);
+  let analysis = baselineAnalysis;
+  if (flaggedOutliers.length) {
+    try {
+      const withoutOutliers = buildAggregateMap(false);
+      const outlierExcludedAnalysis = analysisFromAggregates({ aggregates: Array.from(withoutOutliers.aggregateMap.values()), profiles, usableRows: withoutOutliers.usableRows });
+      const baselinePrimary = baselineAnalysis.causes[0] ?? null;
+      const outlierExcludedPrimary = outlierExcludedAnalysis.causes[0] ?? null;
+      const baselinePrimaryWithoutOutliers = baselinePrimary ? outlierExcludedAnalysis.causes.find(cause => cause.dimension === baselinePrimary.dimension && cause.value === baselinePrimary.value)?.impact ?? 0 : 0;
+      const outlierImpactOnBaselinePrimary = baselinePrimary ? baselinePrimary.impact - baselinePrimaryWithoutOutliers : 0;
+      const explanationChanged = Boolean(baselinePrimary && (!outlierExcludedPrimary || baselinePrimary.dimension !== outlierExcludedPrimary.dimension || baselinePrimary.value !== outlierExcludedPrimary.value || Math.abs(outlierImpactOnBaselinePrimary) >= Math.max(1, Math.abs(baselinePrimary.impact) * 0.5)));
+      const outlierSensitivity = {
+        outlierRows: flaggedOutliers.length,
+        baselinePrimary: baselinePrimary ? { dimension: baselinePrimary.dimension, value: baselinePrimary.value, impact: baselinePrimary.impact } : null,
+        outlierExcludedPrimary: outlierExcludedPrimary ? { dimension: outlierExcludedPrimary.dimension, value: outlierExcludedPrimary.value, impact: outlierExcludedPrimary.impact } : null,
+        baselinePrimaryImpactWithoutOutliers: baselinePrimaryWithoutOutliers,
+        outlierImpactOnBaselinePrimary,
+        explanationChanged,
+      };
+      if (explanationChanged && baselinePrimary && outlierExcludedPrimary) {
+        const confidence = Math.min(baselineAnalysis.confidence, outlierExcludedAnalysis.confidence, 65);
+        analysis = {
+          ...baselineAnalysis,
+          causes: outlierExcludedAnalysis.causes,
+          confidence,
+          outlierSensitivity,
+          summary: `${baselineAnalysis.metric} ${baselineAnalysis.change < 0 ? "decreased" : "increased"} ${Math.abs(baselineAnalysis.changePercent).toFixed(1)}% from ${baselineAnalysis.previousPeriod} to ${baselineAnalysis.currentPeriod} when all transactions are included. However, ${flaggedOutliers.length} IQR-flagged transaction${flaggedOutliers.length === 1 ? "" : "s"} materially change the driver ranking. ${baselinePrimary.dimension}: ${baselinePrimary.value} has an all-transaction impact of ${baselinePrimary.impact.toLocaleString(undefined, { maximumFractionDigits: 0 })}, but ${baselinePrimaryWithoutOutliers.toLocaleString(undefined, { maximumFractionDigits: 0 })} without flagged transactions. The driver view therefore uses the outlier-excluded sensitivity result, led by ${outlierExcludedPrimary.dimension}: ${outlierExcludedPrimary.value}.`,
+        };
+      } else analysis = { ...baselineAnalysis, outlierSensitivity };
+    } catch {
+      // Preserve the baseline if removing outliers leaves too little period coverage for a valid comparison.
+    }
+  }
+  await updateKpiImport(importId, { status: "complete", sourceRowCount: rows.length, usableRowCount: baseline.usableRows, previewRowCount: rows.length, columnsJson: profiles, cleaningSummaryJson: logsFromStats(stats), analysisJson: analysis, workerCheckpointJson: { phase: "complete", processedRows: rows.length, recalculated: true }, completedAt: new Date() });
   return analysis;
 }
 

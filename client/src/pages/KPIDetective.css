@@ -136,3 +136,12 @@
 
 .cell-edit { max-width: 100%; padding: 0; overflow: hidden; border: 0; color: inherit; background: transparent; font: inherit; text-align: left; text-overflow: ellipsis; white-space: nowrap; }
 .cell-edit:hover { color: var(--mint-deep); text-decoration: underline; text-decoration-style: dotted; text-underline-offset: 3px; }
+
+.outlier-sensitivity { display: grid; grid-template-columns: 28px 1fr auto; gap: 12px; align-items: start; margin-top: 16px; padding: 15px 17px; border: 1px solid #ecd5a6; border-radius: 12px; color: #795619; background: #fff8e6; }
+.outlier-sensitivity > svg { margin-top: 2px; color: #9a6a16; }
+.outlier-sensitivity strong { display: block; margin-top: 4px; font-size: 12px; }
+.outlier-sensitivity p { margin: 4px 0 0; color: #805d1d; font-size: 11px; line-height: 1.5; }
+.outlier-sensitivity button { display: inline-flex; align-items: center; gap: 5px; padding: 6px 0; border: 0; color: #8b621a; background: transparent; font-size: 10px; font-weight: 700; white-space: nowrap; }
+.dark-mode .outlier-sensitivity { border-color: #755e31; color: #f0d794; background: #4a3b20; }
+.dark-mode .outlier-sensitivity p, .dark-mode .outlier-sensitivity button { color: #efd899; }
+@media (max-width: 640px) { .outlier-sensitivity { grid-template-columns: 24px 1fr; }.outlier-sensitivity button { grid-column: 2; justify-self: start; } }

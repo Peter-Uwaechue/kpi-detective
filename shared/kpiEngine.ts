@@ -68,6 +68,15 @@ export type CauseCard = {
   trend: TrendPoint[];
 };
 
+export type OutlierSensitivity = {
+  outlierRows: number;
+  baselinePrimary: Pick<CauseCard, "dimension" | "value" | "impact"> | null;
+  outlierExcludedPrimary: Pick<CauseCard, "dimension" | "value" | "impact"> | null;
+  baselinePrimaryImpactWithoutOutliers: number;
+  outlierImpactOnBaselinePrimary: number;
+  explanationChanged: boolean;
+};
+
 export type KpiAnalysis = {
   metric: string;
   metricLabel: string;
@@ -85,6 +94,7 @@ export type KpiAnalysis = {
   causes: CauseCard[];
   confidence: number;
   summary: string;
+  outlierSensitivity?: OutlierSensitivity;
 };
 
 export type QuestionAnswer = {
