@@ -1,4 +1,4 @@
-import { COOKIE_NAME, UNAUTHED_ERR_MSG } from "@shared/const";
+import { UNAUTHED_ERR_MSG } from "@shared/const";
 import { HydrationBoundary, QueryClient, QueryClientProvider, type DehydratedState } from "@tanstack/react-query";
 import { httpBatchLink, TRPCClientError } from "@trpc/client";
 import { hydrateRoot } from "react-dom/client";
@@ -7,6 +7,7 @@ import { Router } from "wouter";
 import App from "./App";
 import { startLogin } from "./const";
 import { trpc } from "./lib/trpc";
+import { supabase } from "./lib/supabase";
 import "./index.css";
 
 declare global { interface Window { __RQ_STATE__?: unknown } }
@@ -36,14 +37,9 @@ const trpcClient = trpc.createClient({
   links: [httpBatchLink({
     url: "/api/trpc",
     transformer: superjson,
-    headers() {
-      try {
-        const raw = sessionStorage.getItem("manus-cookie");
-        const prefix = `${COOKIE_NAME}=`;
-        const pair = raw?.split(";").find(value => value.trim().startsWith(prefix));
-        const token = pair?.trim().slice(prefix.length);
-        return token ? { Authorization: `Bearer ${token}` } : {};
-      } catch { return {}; }
+    async headers() {
+      const { data } = await supabase.auth.getSession();
+      return data.session ? { Authorization: `Bearer ${data.session.access_token}` } : {};
     },
     fetch(input, init) { return globalThis.fetch(input, { ...(init ?? {}), credentials: "include" }); },
   })],

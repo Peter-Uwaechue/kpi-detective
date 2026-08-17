@@ -86,16 +86,17 @@ export async function writeImportRows(importId: string, rows: ImportRowWrite[]) 
     possibleDuplicate: row.possibleDuplicate ?? false,
     exactDuplicate: row.exactDuplicate ?? false,
     rowSignature: row.rowSignature,
-  }))).onDuplicateKeyUpdate({
+  }))).onConflictDoUpdate({
+    target: [kpiImportRows.importId, kpiImportRows.rowNumber],
     set: {
-      rawValues: sql`VALUES(raw_values)`,
-      cleanedValues: sql`VALUES(cleaned_values)`,
-      changes: sql`VALUES(changes)`,
-      issues: sql`VALUES(issues)`,
-      excluded: sql`VALUES(excluded)`,
-      possibleDuplicate: sql`VALUES(possible_duplicate)`,
-      exactDuplicate: sql`VALUES(exact_duplicate)`,
-      rowSignature: sql`VALUES(row_signature)`,
+      rawValues: sql`excluded.raw_values`,
+      cleanedValues: sql`excluded.cleaned_values`,
+      changes: sql`excluded.changes`,
+      issues: sql`excluded.issues`,
+      excluded: sql`excluded.excluded`,
+      possibleDuplicate: sql`excluded.possible_duplicate`,
+      exactDuplicate: sql`excluded.exact_duplicate`,
+      rowSignature: sql`excluded.row_signature`,
     },
   });
 }
@@ -112,10 +113,11 @@ export async function writeImportAggregates(importId: string, aggregates: Aggreg
     segment: item.segment,
     metricTotal: item.metricTotal.toFixed(4),
     recordCount: item.recordCount,
-  }))).onDuplicateKeyUpdate({
+  }))).onConflictDoUpdate({
+    target: [kpiImportAggregates.importId, kpiImportAggregates.metricColumn, kpiImportAggregates.period, kpiImportAggregates.dimension, kpiImportAggregates.segment],
     set: {
-      metricTotal: sql`${kpiImportAggregates.metricTotal} + VALUES(metric_total)`,
-      recordCount: sql`${kpiImportAggregates.recordCount} + VALUES(record_count)`,
+      metricTotal: sql`${kpiImportAggregates.metricTotal} + excluded.metric_total`,
+      recordCount: sql`${kpiImportAggregates.recordCount} + excluded.record_count`,
     },
   });
 }
@@ -151,8 +153,8 @@ export async function claimNextQueuedImport() {
     startedAt: now,
     attemptCount: sql`${kpiImports.attemptCount} + 1`,
     errorMessage: null,
-  }).where(and(eq(kpiImports.id, candidate.id), eq(kpiImports.status, "queued")));
-  if (Number(result[0]?.affectedRows ?? 0) !== 1) return null;
+  }).where(and(eq(kpiImports.id, candidate.id), eq(kpiImports.status, "queued"))).returning({ id: kpiImports.id });
+  if (result.length !== 1) return null;
   return { ...candidate, status: "profiling" as const, startedAt: now, attemptCount: candidate.attemptCount + 1 };
 }
 
