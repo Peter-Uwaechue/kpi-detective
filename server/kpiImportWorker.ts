@@ -1,4 +1,3 @@
-import "dotenv/config";
 import crypto from "node:crypto";
 import { Readable } from "node:stream";
 import ExcelJS from "exceljs";
@@ -6,10 +5,14 @@ import { parse } from "csv-parse";
 import type { KpiAnalysis } from "../shared/kpiEngine";
 import {
   claimNextQueuedImport,
+  clearImportAggregates,
   filterNovelImportRows,
+  getAllImportRows,
   getImportAggregates,
+  getImportRow,
   getKpiImport,
   resetKpiImportData,
+  updateImportRowReview,
   updateKpiImport,
   writeImportAggregates,
   writeImportRows,
@@ -20,28 +23,63 @@ import { getImportObjectStream } from "./kpiImportStorage";
 
 const BATCH_SIZE = Math.max(100, Math.min(Number(process.env.KPI_IMPORT_BATCH_SIZE || 1000), 5000));
 const UNKNOWN = "Unknown";
+const PROFILE_MIN_VALID_RATE = 0.75;
+const MAX_FUZZY_CATEGORY_VALUES = 400;
 const REVENUE_TERMS = ["revenue", "sales", "amount", "total", "value", "gmv", "income", "turnover", "net", "purchase", "spend", "price", "cost", "profit"];
 const DATE_TERMS = ["date", "day", "time", "month", "week", "created", "ordered", "purchased", "transaction"];
 const CATEGORY_TERMS = ["region", "state", "city", "location", "product", "category", "channel", "customer", "client", "segment", "store", "department", "brand", "type"];
+const IDENTIFIER_PATTERN = /\b(id|order|invoice|transaction|reference|sku|code)\b/i;
+const CURRENCY_CODE_PATTERN = /\b(NGN|USD|EUR|GBP|CAD|AUD|ZAR|KES|GHS|AED|INR)\b/gi;
 
 type RawRecord = Record<string, unknown>;
 type ColumnKind = "date" | "number" | "category" | "identifier" | "unknown";
 type ColumnProfile = { name: string; kind: ColumnKind; confidence: number; datePreference?: "day-first" | "month-first" | "ambiguous" };
-type CleaningLog = { key: string; title: string; detail: string; count: number; severity: "success" | "warning" | "info" };
-type WorkerStats = { sourceRows: number; usableRows: number; exactDuplicates: number; missingNumeric: number; invalidNumeric: number; dateChanges: number; numericChanges: number; categoryChanges: number; possibleDuplicates: number; outliers: number };
+type CellChange = { column: string; from: unknown; to: unknown; reason: string };
+type DataIssue = { type: "possible-duplicate" | "outlier" | "invalid-number" | "ambiguous-date" | "missing" | "exact-duplicate"; column?: string; message: string };
+type WorkerStats = {
+  sourceRows: number;
+  usableRows: number;
+  exactDuplicates: number;
+  missingNumeric: number;
+  invalidNumeric: number;
+  dateChanges: number;
+  numericChanges: number;
+  categoryChanges: number;
+  fuzzyCategoryMerges: number;
+  possibleDuplicates: number;
+  outliers: number;
+};
+type ReviewRow = {
+  rowNumber: number;
+  rawValues: RawRecord;
+  cleanedValues: RawRecord;
+  changes: CellChange[];
+  issues: DataIssue[];
+  excluded: boolean;
+  possibleDuplicate: boolean;
+  isOutlier: boolean;
+  exactDuplicate: boolean;
+  rowSignature: string;
+};
 
-const text = (value: unknown) => value === null || value === undefined ? "" : String(value).trim();
-const normalise = (value: unknown) => text(value).replace(/\s+/g, " ").toLowerCase();
+const text = (value: unknown) => value === null || value === undefined ? "" : String(value).replace(/\u00a0/g, " ").trim();
+const normalise = (value: unknown) => text(value).replace(/[._-]+/g, " ").replace(/\s+/g, " ").trim().toLowerCase();
 const title = (value: string) => value.toLowerCase().replace(/\b\w/g, letter => letter.toUpperCase());
-const missing = (value: unknown) => ["", "n/a", "na", "null", "none", "-", "undefined"].includes(normalise(value));
+const missing = (value: unknown) => ["", "n/a", "na", "null", "none", "-", "undefined", "(blank)"].includes(normalise(value));
 const headerScore = (name: string, terms: string[]) => terms.reduce((sum, term) => sum + (normalise(name) === term ? 2 : normalise(name).includes(term) ? 1 : 0), 0);
+const asRecord = (value: unknown): RawRecord => value && typeof value === "object" && !Array.isArray(value) ? value as RawRecord : {};
+const asArray = <T>(value: unknown): T[] => Array.isArray(value) ? value as T[] : [];
+const signatureFor = (values: RawRecord) => crypto.createHash("sha256").update(JSON.stringify(values)).digest("hex");
 
 const parseNumber = (value: unknown): number | null => {
   if (typeof value === "number") return Number.isFinite(value) ? value : null;
   const raw = text(value);
   if (!raw || missing(raw)) return null;
-  const negative = /^\(.*\)$/.test(raw) || raw.includes("-");
-  const compact = raw.replace(/[()\s$€£¥₦₹-]/g, "");
+  const negative = /^\(.*\)$/.test(raw) || /^\s*-/.test(raw);
+  const compact = raw
+    .replace(CURRENCY_CODE_PATTERN, "")
+    .replace(/[()\s$€£¥₦₹-]/g, "");
+  if (!compact || /[A-Za-z]/.test(compact)) return null;
   const comma = compact.lastIndexOf(",");
   const dot = compact.lastIndexOf(".");
   let numberText = compact;
@@ -57,31 +95,62 @@ const toIso = (year: number, month: number, day: number) => {
 };
 
 const parseDate = (value: unknown, preference: "day-first" | "month-first" | "ambiguous" = "ambiguous") => {
+  if (value instanceof Date && !Number.isNaN(value.getTime())) return value.toISOString().slice(0, 10);
   const raw = text(value);
   if (!raw || missing(raw)) return null;
   const iso = raw.match(/^(\d{4})[-/.](\d{1,2})[-/.](\d{1,2})/);
   if (iso) return toIso(Number(iso[1]), Number(iso[2]), Number(iso[3]));
   const slash = raw.match(/^(\d{1,2})[/-](\d{1,2})[/-](\d{2,4})/);
   if (slash) {
-    const first = Number(slash[1]); const second = Number(slash[2]); const year = Number(slash[3].length === 2 ? `20${slash[3]}` : slash[3]);
+    const first = Number(slash[1]);
+    const second = Number(slash[2]);
+    let year = Number(slash[3]);
+    if (year < 100) year += year >= 70 ? 1900 : 2000;
     if (first > 12) return toIso(year, second, first);
     if (second > 12) return toIso(year, first, second);
     return preference === "day-first" ? toIso(year, second, first) : toIso(year, first, second);
   }
+  const namedDayFirst = raw.match(/^(\d{1,2})\s*[- ]\s*([A-Za-z]{3,9})\s*[-, ]\s*(\d{2,4})$/);
+  const namedMonthFirst = raw.match(/^([A-Za-z]{3,9})\s+(\d{1,2}),?\s+(\d{2,4})$/);
+  if (namedDayFirst || namedMonthFirst) {
+    const parsed = Date.parse(raw);
+    return Number.isNaN(parsed) ? null : new Date(parsed).toISOString().slice(0, 10);
+  }
+  const looksLikeDate = (/\d{4}/.test(raw) && /[T\s/.-]/.test(raw)) || (/^[A-Za-z]{3,9}\s+\d{1,2}/.test(raw) && /\d{2,4}/.test(raw));
+  if (!looksLikeDate) return null;
   const parsed = Date.parse(raw);
   return Number.isNaN(parsed) ? null : new Date(parsed).toISOString().slice(0, 10);
+};
+
+const inferDatePreference = (values: unknown[]): "day-first" | "month-first" | "ambiguous" => {
+  let dayFirst = 0;
+  let monthFirst = 0;
+  values.forEach(value => {
+    const parts = text(value).match(/^(\d{1,2})[/-](\d{1,2})[/-](\d{2,4})/);
+    if (!parts) return;
+    const first = Number(parts[1]);
+    const second = Number(parts[2]);
+    if (first > 12 && second <= 12) dayFirst++;
+    if (second > 12 && first <= 12) monthFirst++;
+  });
+  return dayFirst > monthFirst ? "day-first" : monthFirst > dayFirst ? "month-first" : "ambiguous";
 };
 
 const inferProfiles = (headers: string[], samples: RawRecord[]): ColumnProfile[] => headers.map(name => {
   const values = samples.map(row => row[name]).filter(value => !missing(value));
   if (!values.length) return { name, kind: "unknown", confidence: 0 };
+  const preference = inferDatePreference(values);
   const numericRate = values.filter(value => parseNumber(value) !== null).length / values.length;
-  const dateRate = values.filter(value => parseDate(value) !== null).length / values.length;
+  const dateRate = values.filter(value => parseDate(value, preference) !== null).length / values.length;
   const distinctRate = new Set(values.map(text)).size / values.length;
-  if (dateRate >= .72 && (headerScore(name, DATE_TERMS) > 0 || numericRate < .98)) return { name, kind: "date", confidence: Math.round(Math.min(99, dateRate * 84 + headerScore(name, DATE_TERMS) * 7)), datePreference: "day-first" };
-  if (/\b(id|order|invoice|transaction|reference|sku|code)\b/i.test(name) || (distinctRate > .92 && values.length > 7 && /\d/.test(values.map(text).join("")))) return { name, kind: "identifier", confidence: 82 };
-  if (numericRate >= .72) return { name, kind: "number", confidence: Math.round(Math.min(99, numericRate * 84 + headerScore(name, REVENUE_TERMS) * 5)) };
-  if (distinctRate <= .9 || headerScore(name, CATEGORY_TERMS) > 0) return { name, kind: "category", confidence: Math.round(Math.min(95, 70 + headerScore(name, CATEGORY_TERMS) * 6)) };
+  const dateHint = headerScore(name, DATE_TERMS);
+  const numericHint = headerScore(name, REVENUE_TERMS);
+  if (dateRate >= PROFILE_MIN_VALID_RATE && (dateHint > 0 || numericRate < 0.98)) return { name, kind: "date", confidence: Math.round(Math.min(99, dateRate * 88 + dateHint * 5)), datePreference: preference };
+  if (IDENTIFIER_PATTERN.test(name) || (distinctRate > 0.92 && values.length > 7 && /\d/.test(values.map(text).join("")) && numericHint === 0)) return { name, kind: "identifier", confidence: 82 };
+  const categoryHint = headerScore(name, CATEGORY_TERMS);
+  if (categoryHint > 0 && numericHint === 0) return { name, kind: "category", confidence: Math.round(Math.min(95, 70 + categoryHint * 6)) };
+  if (numericRate >= PROFILE_MIN_VALID_RATE) return { name, kind: "number", confidence: Math.round(Math.min(99, numericRate * 88 + numericHint * 5)) };
+  if (distinctRate <= 0.96 || categoryHint > 0) return { name, kind: "category", confidence: Math.round(Math.min(95, 70 + categoryHint * 6)) };
   return { name, kind: "unknown", confidence: 48 };
 });
 
@@ -109,17 +178,18 @@ export async function* streamRecords(fileName: string, stream: Readable): AsyncG
   const extension = fileName.split(".").pop()?.toLowerCase();
   if (extension === "csv") yield* csvRecords(stream);
   else if (extension === "xlsx") yield* xlsxRecords(stream);
-  else throw new Error("Large-file processing supports streaming CSV and XLSX. Convert legacy .xls files to CSV or XLSX before import.");
+  else throw new Error("KPI Detective supports streaming CSV and XLSX. Convert legacy .xls files before import.");
 }
 
-const findMetric = (profiles: ColumnProfile[]) => profiles.filter(profile => profile.kind === "number").sort((a, b) => headerScore(b.name, REVENUE_TERMS) - headerScore(a.name, REVENUE_TERMS))[0];
-const findDate = (profiles: ColumnProfile[]) => profiles.find(profile => profile.kind === "date");
+const findMetric = (profiles: ColumnProfile[]) => profiles.filter(profile => profile.kind === "number").sort((a, b) => headerScore(b.name, REVENUE_TERMS) - headerScore(a.name, REVENUE_TERMS) || b.confidence - a.confidence)[0];
+const findDate = (profiles: ColumnProfile[]) => profiles.filter(profile => profile.kind === "date").sort((a, b) => headerScore(b.name, DATE_TERMS) - headerScore(a.name, DATE_TERMS) || b.confidence - a.confidence)[0];
+const normaliseCategory = (value: unknown) => title(normalise(value)) || UNKNOWN;
 
 function cleanRow(row: RawRecord, profiles: ColumnProfile[], stats: WorkerStats) {
   const rawValues: RawRecord = { ...row };
   const cleanedValues: RawRecord = {};
-  const changes: unknown[] = [];
-  const issues: unknown[] = [];
+  const changes: CellChange[] = [];
+  const issues: DataIssue[] = [];
   for (const profile of profiles) {
     const raw = row[profile.name];
     if (missing(raw)) {
@@ -129,7 +199,7 @@ function cleanRow(row: RawRecord, profiles: ColumnProfile[], stats: WorkerStats)
     }
     if (profile.kind === "number") {
       const parsed = parseNumber(raw);
-      if (parsed === null) { cleanedValues[profile.name] = null; stats.invalidNumeric++; issues.push({ type: "invalid-number", column: profile.name, message: "Could not parse numeric value" }); }
+      if (parsed === null) { cleanedValues[profile.name] = null; stats.invalidNumeric++; issues.push({ type: "invalid-number", column: profile.name, message: "Could not parse numeric or currency value" }); }
       else { cleanedValues[profile.name] = parsed; if (String(parsed) !== text(raw).replace(/,/g, "")) { stats.numericChanges++; changes.push({ column: profile.name, from: raw, to: parsed, reason: "Standardised numeric or currency value" }); } }
       continue;
     }
@@ -141,8 +211,8 @@ function cleanRow(row: RawRecord, profiles: ColumnProfile[], stats: WorkerStats)
       continue;
     }
     if (profile.kind === "category") {
-      const normalized = title(normalise(raw));
-      cleanedValues[profile.name] = normalized || UNKNOWN;
+      const normalized = normaliseCategory(raw);
+      cleanedValues[profile.name] = normalized;
       if (normalized !== text(raw)) { stats.categoryChanges++; changes.push({ column: profile.name, from: raw, to: normalized, reason: "Standardised category casing and spacing" }); }
       continue;
     }
@@ -151,10 +221,14 @@ function cleanRow(row: RawRecord, profiles: ColumnProfile[], stats: WorkerStats)
   return { rawValues, cleanedValues, changes, issues };
 }
 
+function eligibleForAnalysis(cleaned: RawRecord, metric: ColumnProfile, date: ColumnProfile) {
+  return typeof cleaned[metric.name] === "number" && typeof cleaned[date.name] === "string" && /^\d{4}-\d{2}/.test(String(cleaned[date.name]));
+}
+
 function aggregateRow(cleaned: RawRecord, profiles: ColumnProfile[], metric: ColumnProfile, date: ColumnProfile, aggregateMap: Map<string, AggregateWrite>) {
   const metricValue = cleaned[metric.name];
   const isoDate = cleaned[date.name];
-  if (typeof metricValue !== "number" || typeof isoDate !== "string" || !/^\d{4}-\d{2}/.test(isoDate)) return false;
+  if (!eligibleForAnalysis(cleaned, metric, date) || typeof metricValue !== "number" || typeof isoDate !== "string") return false;
   const period = isoDate.slice(0, 7);
   const dimensions = profiles.filter(profile => profile.kind === "category" || (profile.kind === "identifier" && /customer|client/i.test(profile.name)));
   const add = (dimension: string, segment: string) => {
@@ -171,7 +245,7 @@ function aggregateRow(cleaned: RawRecord, profiles: ColumnProfile[], metric: Col
 function analysisFromAggregates(input: { aggregates: Awaited<ReturnType<typeof getImportAggregates>>; profiles: ColumnProfile[]; usableRows: number }): KpiAnalysis {
   const metric = findMetric(input.profiles);
   const date = findDate(input.profiles);
-  if (!metric || !date) throw new Error("The imported file does not contain a reliable numeric KPI and date column.");
+  if (!metric || !date) throw new Error("We could not identify both a reliable date column and numeric KPI. Ensure at least 70% of non-empty values in each field are valid dates or amounts.");
   const totalRows = input.aggregates.filter(item => item.dimension === "__total__" && item.segment === "__all__" && item.metricColumn === metric.name);
   const periods = Array.from(new Set(totalRows.map(row => row.period))).sort();
   if (periods.length < 2) throw new Error("At least two dated periods are required to explain a KPI change.");
@@ -211,34 +285,201 @@ function analysisFromAggregates(input: { aggregates: Awaited<ReturnType<typeof g
   const summary = primary
     ? `${metric.name} ${direction} ${Math.abs(changePercent).toFixed(1)}% from ${previousPeriod} to ${currentPeriod}. The largest contributor was ${primary.dimension}: ${primary.value}. We are ${confidence}% confident in this explanation. If it had stayed flat, ${metric.name.toLowerCase()} would have been about ${(primary.counterfactual).toLocaleString(undefined, { maximumFractionDigits: 0 })}.`
     : `${metric.name} ${direction} ${Math.abs(changePercent).toFixed(1)}% from ${previousPeriod} to ${currentPeriod}. No material categorical driver was identified.`;
-  return {
-    metric: metric.name,
-    metricLabel: metric.name,
-    currencySymbol: /revenue|sales|amount|value|income|turnover/i.test(metric.name) ? "$" : "",
-    dateColumn: date.name,
-    previousPeriod,
-    currentPeriod,
-    previousTotal,
-    currentTotal,
-    change,
-    changePercent,
-    excludedMetricRows: 0,
-    trend: periods.slice(-8).map(period => ({ period, total: totals.get(period) ?? 0 })),
-    causes,
-    confidence,
-    summary,
-    totalRowsUsed: input.usableRows,
-  };
+  return { metric: metric.name, metricLabel: metric.name, currencySymbol: /revenue|sales|amount|value|income|turnover|purchase|spend|price|cost|profit/i.test(metric.name) ? "$" : "", dateColumn: date.name, previousPeriod, currentPeriod, previousTotal, currentTotal, change, changePercent, excludedMetricRows: 0, trend: periods.slice(-8).map(period => ({ period, total: totals.get(period) ?? 0 })), causes, confidence, summary, totalRowsUsed: input.usableRows };
 }
 
-const logsFromStats = (stats: WorkerStats): CleaningLog[] => [
-  { key: "duplicates", title: "Exact duplicates removed", detail: "Duplicate signatures are checked in the backend while streaming.", count: stats.exactDuplicates, severity: stats.exactDuplicates ? "success" : "info" },
-  { key: "dates", title: "Dates standardised", detail: "Recognisable dates were converted to ISO format in the worker.", count: stats.dateChanges, severity: "success" },
-  { key: "numbers", title: "Numbers and currencies standardised", detail: "Presentation formatting was removed while retaining numeric values.", count: stats.numericChanges, severity: "success" },
+const logsFromStats = (stats: WorkerStats) => [
+  { key: "duplicates", title: "Exact duplicates excluded", detail: "Exact cleaned-row duplicates are retained for review but excluded from the default calculation.", count: stats.exactDuplicates, severity: stats.exactDuplicates ? "success" : "info" },
+  { key: "possible", title: "Possible duplicates flagged", detail: "Rows sharing customer, date, and KPI value are kept for your decision.", count: stats.possibleDuplicates, severity: stats.possibleDuplicates ? "warning" : "info" },
+  { key: "fuzzy", title: "High-confidence category matches", detail: "Only aliases and near-identical category values above the high similarity threshold were merged.", count: stats.fuzzyCategoryMerges, severity: stats.fuzzyCategoryMerges ? "success" : "info" },
+  { key: "outliers", title: "Outliers flagged for review", detail: "IQR-based outlier flags never remove values automatically.", count: stats.outliers, severity: stats.outliers ? "warning" : "info" },
+  { key: "dates", title: "Dates standardised", detail: "Recognisable mixed date formats were converted to ISO format.", count: stats.dateChanges, severity: "success" },
+  { key: "numbers", title: "Numbers and currencies standardised", detail: "Currency symbols and supported currency codes were removed while retaining numeric values.", count: stats.numericChanges, severity: "success" },
   { key: "categories", title: "Category values standardised", detail: "Category casing and spacing were normalised during import.", count: stats.categoryChanges, severity: "success" },
-  { key: "invalid", title: "Invalid numeric values flagged", detail: "Invalid numeric values remain visible for review and are excluded from the selected KPI.", count: stats.invalidNumeric, severity: stats.invalidNumeric ? "warning" : "info" },
-  { key: "missing", title: "Missing numeric values flagged", detail: "Missing numeric values remain in the preview but do not affect the KPI calculation.", count: stats.missingNumeric, severity: stats.missingNumeric ? "warning" : "info" },
+  { key: "invalid", title: "Invalid numeric values flagged", detail: "Invalid numeric values remain visible but do not affect the selected KPI.", count: stats.invalidNumeric, severity: stats.invalidNumeric ? "warning" : "info" },
+  { key: "missing", title: "Missing numeric values flagged", detail: "Missing numeric values remain visible but do not affect the selected KPI.", count: stats.missingNumeric, severity: stats.missingNumeric ? "warning" : "info" },
 ];
+
+const levenshtein = (first: string, second: string) => {
+  const previous = Array.from({ length: second.length + 1 }, (_, index) => index);
+  for (let i = 1; i <= first.length; i++) {
+    const current = [i];
+    for (let j = 1; j <= second.length; j++) current[j] = Math.min(current[j - 1] + 1, previous[j] + 1, previous[j - 1] + (first[i - 1] === second[j - 1] ? 0 : 1));
+    for (let j = 0; j < previous.length; j++) previous[j] = current[j];
+  }
+  return previous[second.length];
+};
+
+const similarity = (first: string, second: string) => {
+  const length = Math.max(first.length, second.length);
+  return length ? 1 - levenshtein(first, second) / length : 1;
+};
+
+const knownRegionAlias = (value: string, column: string) => {
+  if (!/(region|state|city|location|area)/.test(normalise(column))) return null;
+  const compact = normalise(value).replace(/\s/g, "");
+  if (["ny", "nyc", "newyork"].includes(compact)) return "New York";
+  if (["la", "losangeles"].includes(compact)) return "Los Angeles";
+  if (["uk", "unitedkingdom", "greatbritain"].includes(compact)) return "United Kingdom";
+  return null;
+};
+
+const appendIssue = (row: ReviewRow, issue: DataIssue) => {
+  if (!row.issues.some(existing => existing.type === issue.type && existing.column === issue.column && existing.message === issue.message)) row.issues.push(issue);
+};
+
+const payloadFor = (row: ReviewRow): ImportRowWrite => ({
+  rowNumber: row.rowNumber,
+  rawValues: row.rawValues,
+  cleanedValues: row.cleanedValues,
+  changes: row.changes,
+  issues: row.issues,
+  excluded: row.excluded,
+  possibleDuplicate: row.possibleDuplicate,
+  isOutlier: row.isOutlier,
+  exactDuplicate: row.exactDuplicate,
+  rowSignature: row.rowSignature,
+});
+
+const toReviewRows = (rows: Awaited<ReturnType<typeof getAllImportRows>>): ReviewRow[] => rows.map(row => ({
+  rowNumber: row.rowNumber,
+  rawValues: asRecord(row.rawValues),
+  cleanedValues: asRecord(row.cleanedValues),
+  changes: asArray<CellChange>(row.changes),
+  issues: asArray<DataIssue>(row.issues),
+  excluded: row.excluded,
+  possibleDuplicate: row.possibleDuplicate,
+  isOutlier: row.isOutlier,
+  exactDuplicate: row.exactDuplicate,
+  rowSignature: row.rowSignature,
+}));
+
+async function persistReviewRows(importId: string, rows: ReviewRow[]) {
+  for (let index = 0; index < rows.length; index += BATCH_SIZE) await writeImportRows(importId, rows.slice(index, index + BATCH_SIZE).map(payloadFor));
+}
+
+function applyFuzzyCategoryReview(rows: ReviewRow[], profiles: ColumnProfile[], stats: WorkerStats) {
+  const changedRows = new Set<number>();
+  const categoryProfiles = profiles.filter(profile => profile.kind === "category");
+  for (const profile of categoryProfiles) {
+    const frequency = new Map<string, number>();
+    rows.filter(row => !row.excluded).forEach(row => {
+      const value = String(row.cleanedValues[profile.name] ?? UNKNOWN);
+      if (value !== UNKNOWN) frequency.set(value, (frequency.get(value) ?? 0) + 1);
+    });
+    const values = Array.from(frequency.keys());
+    // Fuzzy reconciliation is for human-managed dimensions such as region/channel.
+    // Skip very high-cardinality fields rather than risk slow or over-broad matching.
+    if (values.length > MAX_FUZZY_CATEGORY_VALUES) continue;
+    const replacementByValue = new Map<string, string>();
+    values.sort((left, right) => (frequency.get(left) ?? 0) - (frequency.get(right) ?? 0) || left.localeCompare(right)).forEach(value => {
+      const alias = knownRegionAlias(value, profile.name);
+      const candidates = values.filter(candidate => candidate !== value && candidate.length >= 4 && value.length >= 4 && (frequency.get(candidate) ?? 0) >= (frequency.get(value) ?? 0));
+      const fuzzy = candidates.map(candidate => ({ candidate, score: similarity(normalise(value), normalise(candidate)) })).sort((left, right) => right.score - left.score || left.candidate.localeCompare(right.candidate))[0];
+      const replacement = alias ?? (fuzzy && fuzzy.score >= 0.93 ? fuzzy.candidate : null);
+      if (replacement && replacement !== value) replacementByValue.set(value, replacement);
+    });
+    rows.forEach(row => {
+      const current = String(row.cleanedValues[profile.name] ?? UNKNOWN);
+      const replacement = replacementByValue.get(current);
+      if (!replacement) return;
+      row.cleanedValues[profile.name] = replacement;
+      row.rowSignature = signatureFor(row.cleanedValues);
+      row.changes.push({ column: profile.name, from: current, to: replacement, reason: "Merged a high-confidence near-duplicate category" });
+      stats.fuzzyCategoryMerges++;
+      changedRows.add(row.rowNumber);
+    });
+  }
+  return changedRows;
+}
+
+function applyPossibleDuplicateReview(rows: ReviewRow[], profiles: ColumnProfile[], stats: WorkerStats) {
+  const changedRows = new Set<number>();
+  const date = findDate(profiles);
+  const metric = findMetric(profiles);
+  const customer = profiles.find(profile => (profile.kind === "category" || profile.kind === "identifier") && /customer|client/i.test(profile.name));
+  if (!date || !metric || !customer) return changedRows;
+  const firstByKey = new Map<string, ReviewRow>();
+  rows.filter(row => !row.excluded).forEach(row => {
+    const dateValue = row.cleanedValues[date.name];
+    const metricValue = row.cleanedValues[metric.name];
+    const customerValue = row.cleanedValues[customer.name];
+    if (typeof dateValue !== "string" || typeof metricValue !== "number" || typeof customerValue !== "string") return;
+    const key = `${normalise(customerValue)}\u0000${dateValue}\u0000${metricValue}`;
+    const first = firstByKey.get(key);
+    if (!first) { firstByKey.set(key, row); return; }
+    row.possibleDuplicate = true;
+    first.possibleDuplicate = true;
+    changedRows.add(row.rowNumber);
+    changedRows.add(first.rowNumber);
+    appendIssue(row, { type: "possible-duplicate", message: `Shares customer, date, and amount with row ${first.rowNumber}; kept for your review.` });
+    appendIssue(first, { type: "possible-duplicate", message: `Shares customer, date, and amount with row ${row.rowNumber}; kept for your review.` });
+  });
+  stats.possibleDuplicates = rows.filter(row => row.possibleDuplicate).length;
+  return changedRows;
+}
+
+function applyOutlierReview(rows: ReviewRow[], profiles: ColumnProfile[], stats: WorkerStats) {
+  const changedRows = new Set<number>();
+  profiles.filter(profile => profile.kind === "number").forEach(profile => {
+    const values = rows.filter(row => !row.excluded).map(row => row.cleanedValues[profile.name]).filter((value): value is number => typeof value === "number").sort((left, right) => left - right);
+    if (values.length < 5) return;
+    const quantile = (fraction: number) => {
+      const position = (values.length - 1) * fraction;
+      const lower = Math.floor(position);
+      const upper = Math.ceil(position);
+      return values[lower] + (values[upper] - values[lower]) * (position - lower);
+    };
+    const q1 = quantile(0.25);
+    const q3 = quantile(0.75);
+    const iqr = q3 - q1;
+    if (iqr <= 0) return;
+    const lower = q1 - iqr * 1.5;
+    const upper = q3 + iqr * 1.5;
+    rows.filter(row => !row.excluded).forEach(row => {
+      const value = row.cleanedValues[profile.name];
+      if (typeof value !== "number" || (value >= lower && value <= upper)) return;
+      row.isOutlier = true;
+      changedRows.add(row.rowNumber);
+      appendIssue(row, { type: "outlier", column: profile.name, message: `${value.toLocaleString(undefined, { maximumFractionDigits: 2 })} is outside the IQR review range (${lower.toLocaleString(undefined, { maximumFractionDigits: 2 })} to ${upper.toLocaleString(undefined, { maximumFractionDigits: 2 })}).` });
+    });
+  });
+  stats.outliers = rows.filter(row => row.isOutlier).length;
+  return changedRows;
+}
+
+async function writeAggregateMap(importId: string, aggregateMap: Map<string, AggregateWrite>) {
+  const aggregates = Array.from(aggregateMap.values());
+  for (let index = 0; index < aggregates.length; index += BATCH_SIZE) await writeImportAggregates(importId, aggregates.slice(index, index + BATCH_SIZE));
+}
+
+async function recalculateFromStoredRows(importId: string, profiles: ColumnProfile[]) {
+  const rows = toReviewRows(await getAllImportRows(importId));
+  const metric = findMetric(profiles);
+  const date = findDate(profiles);
+  if (!metric || !date) throw new Error("The import no longer has a reliable numeric KPI and date column.");
+  await clearImportAggregates(importId);
+  const aggregateMap = new Map<string, AggregateWrite>();
+  let usableRows = 0;
+  rows.filter(row => !row.excluded).forEach(row => { if (aggregateRow(row.cleanedValues, profiles, metric, date, aggregateMap)) usableRows++; });
+  await writeAggregateMap(importId, aggregateMap);
+  const stats: WorkerStats = {
+    sourceRows: rows.length,
+    usableRows,
+    exactDuplicates: rows.filter(row => row.exactDuplicate).length,
+    missingNumeric: rows.flatMap(row => row.issues).filter(issue => issue.type === "missing").length,
+    invalidNumeric: rows.flatMap(row => row.issues).filter(issue => issue.type === "invalid-number").length,
+    dateChanges: rows.flatMap(row => row.changes).filter(change => change.reason === "Standardised date").length,
+    numericChanges: rows.flatMap(row => row.changes).filter(change => change.reason === "Standardised numeric or currency value").length,
+    categoryChanges: rows.flatMap(row => row.changes).filter(change => change.reason === "Standardised category casing and spacing").length,
+    fuzzyCategoryMerges: rows.flatMap(row => row.changes).filter(change => change.reason === "Merged a high-confidence near-duplicate category").length,
+    possibleDuplicates: rows.filter(row => row.possibleDuplicate).length,
+    outliers: rows.filter(row => row.isOutlier).length,
+  };
+  const analysis = analysisFromAggregates({ aggregates: await getImportAggregates(importId), profiles, usableRows });
+  await updateKpiImport(importId, { status: "complete", sourceRowCount: rows.length, usableRowCount: usableRows, previewRowCount: rows.length, columnsJson: profiles, cleaningSummaryJson: logsFromStats(stats), analysisJson: analysis, workerCheckpointJson: { phase: "complete", processedRows: rows.length, recalculated: true }, completedAt: new Date() });
+  return analysis;
+}
 
 export async function processKpiImport(importId: string, options: { claimed?: boolean; maxSourceRows?: number } = {}) {
   const job = await getKpiImport(importId);
@@ -247,13 +488,11 @@ export async function processKpiImport(importId: string, options: { claimed?: bo
   if (!options.claimed) await updateKpiImport(importId, { status: "profiling", startedAt: new Date(), attemptCount: job.attemptCount + 1, errorMessage: null });
   const profileSamples: RawRecord[] = [];
   let headers: string[] = [];
-  const firstStream = await getImportObjectStream(job.storageKey);
   let profiledRows = 0;
+  const firstStream = await getImportObjectStream(job.storageKey);
   for await (const row of streamRecords(job.originalFileName, firstStream)) {
     profiledRows++;
-    if (options.maxSourceRows && profiledRows > options.maxSourceRows) {
-      throw new Error(`File exceeds the ${options.maxSourceRows.toLocaleString()}-row limit for this no-worker version. Please upload a smaller file.`);
-    }
+    if (options.maxSourceRows && profiledRows > options.maxSourceRows) throw new Error(`File exceeds the ${options.maxSourceRows.toLocaleString()}-row limit for this no-worker version. Please upload a smaller file.`);
     if (!headers.length) headers = Object.keys(row);
     if (profileSamples.length < 5000) profileSamples.push(row);
   }
@@ -261,41 +500,92 @@ export async function processKpiImport(importId: string, options: { claimed?: bo
   const profiles = inferProfiles(headers, profileSamples);
   const metric = findMetric(profiles);
   const date = findDate(profiles);
-  if (!metric || !date) throw new Error("We could not identify both a reliable numeric KPI and date column. Add clear date and amount/revenue fields, then retry.");
+  if (!metric || !date) throw new Error("We could not identify both a reliable date column and numeric KPI. Ensure the columns contain mostly valid dates and amounts, even if a few cells contain placeholders such as TBD or cash.");
   await updateKpiImport(importId, { status: "ingesting", columnsJson: profiles, workerCheckpointJson: { phase: "ingesting", batchSize: BATCH_SIZE } });
-
-  const stats: WorkerStats = { sourceRows: 0, usableRows: 0, exactDuplicates: 0, missingNumeric: 0, invalidNumeric: 0, dateChanges: 0, numericChanges: 0, categoryChanges: 0, possibleDuplicates: 0, outliers: 0 };
-  let rows: Array<{ payload: ImportRowWrite; cleanedValues: RawRecord }> = [];
-  let aggregates = new Map<string, AggregateWrite>();
+  const stats: WorkerStats = { sourceRows: 0, usableRows: 0, exactDuplicates: 0, missingNumeric: 0, invalidNumeric: 0, dateChanges: 0, numericChanges: 0, categoryChanges: 0, fuzzyCategoryMerges: 0, possibleDuplicates: 0, outliers: 0 };
+  let rows: ReviewRow[] = [];
   const flush = async () => {
-    const payloads = rows.map(row => row.payload);
+    const payloads = rows.map(payloadFor);
     const novelRows = await filterNovelImportRows(importId, payloads);
-    const novelSignatures = new Set(novelRows.map(row => row.rowSignature));
+    const novelRowNumbers = new Set(novelRows.map(row => row.rowNumber));
     stats.exactDuplicates += payloads.length - novelRows.length;
-    for (const row of rows) {
-      if (novelSignatures.has(row.payload.rowSignature) && aggregateRow(row.cleanedValues, profiles, metric, date, aggregates)) stats.usableRows++;
-    }
-    await writeImportRows(importId, novelRows);
-    await writeImportAggregates(importId, Array.from(aggregates.values()));
+    rows.forEach(row => {
+      if (!novelRowNumbers.has(row.rowNumber)) {
+        row.excluded = true;
+        row.exactDuplicate = true;
+        appendIssue(row, { type: "exact-duplicate", message: "Exact cleaned-row duplicate retained for review and excluded from the default calculation." });
+      } else if (eligibleForAnalysis(row.cleanedValues, metric, date)) stats.usableRows++;
+    });
+    await writeImportRows(importId, rows.map(payloadFor));
     await updateKpiImport(importId, { processingCursor: stats.sourceRows, sourceRowCount: stats.sourceRows, usableRowCount: stats.usableRows, previewRowCount: stats.sourceRows, workerCheckpointJson: { phase: "ingesting", processedRows: stats.sourceRows, batchSize: BATCH_SIZE } });
     rows = [];
-    aggregates = new Map();
   };
-
   const source = await getImportObjectStream(job.storageKey);
   for await (const raw of streamRecords(job.originalFileName, source)) {
     stats.sourceRows++;
     const cleaned = cleanRow(raw, profiles, stats);
-    const signature = crypto.createHash("sha256").update(JSON.stringify(cleaned.cleanedValues)).digest("hex");
-    rows.push({ payload: { rowNumber: stats.sourceRows, ...cleaned, exactDuplicate: false, excluded: false, rowSignature: signature }, cleanedValues: cleaned.cleanedValues });
+    rows.push({ rowNumber: stats.sourceRows, ...cleaned, excluded: false, possibleDuplicate: false, isOutlier: false, exactDuplicate: false, rowSignature: signatureFor(cleaned.cleanedValues) });
     if (rows.length >= BATCH_SIZE) await flush();
   }
-  await flush();
+  if (rows.length) await flush();
   await updateKpiImport(importId, { status: "analyzing", workerCheckpointJson: { phase: "analyzing", processedRows: stats.sourceRows } });
-  const aggregatesForAnalysis = await getImportAggregates(importId);
-  const analysis = analysisFromAggregates({ aggregates: aggregatesForAnalysis, profiles, usableRows: stats.usableRows });
-  await updateKpiImport(importId, { status: "complete", sourceRowCount: stats.sourceRows, usableRowCount: stats.usableRows, previewRowCount: stats.sourceRows, columnsJson: profiles, cleaningSummaryJson: logsFromStats(stats), analysisJson: analysis, workerCheckpointJson: { phase: "complete", processedRows: stats.sourceRows }, completedAt: new Date() });
-  return analysis;
+  const reviewRows = toReviewRows(await getAllImportRows(importId));
+  const fuzzyChanges = applyFuzzyCategoryReview(reviewRows, profiles, stats);
+  const duplicateChanges = applyPossibleDuplicateReview(reviewRows, profiles, stats);
+  const outlierChanges = applyOutlierReview(reviewRows, profiles, stats);
+  const changedRows = new Set(Array.from(fuzzyChanges).concat(Array.from(duplicateChanges), Array.from(outlierChanges)));
+  await persistReviewRows(importId, reviewRows.filter(row => changedRows.has(row.rowNumber)));
+  return recalculateFromStoredRows(importId, profiles);
+}
+
+export async function applyImportReviewAction(input: { importId: string; rowNumber: number; action: "undoChange" | "setExcluded" | "keepPossibleDuplicate" | "editValue"; column?: string; value?: string | null; excluded?: boolean }) {
+  const job = await getKpiImport(input.importId);
+  if (!job) throw new Error("Import job was not found.");
+  const profiles = asArray<ColumnProfile>(job.columnsJson);
+  const storedRow = await getImportRow(input.importId, input.rowNumber);
+  const row = storedRow ? toReviewRows([storedRow])[0] : null;
+  if (!row) throw new Error("Import row was not found.");
+  if (input.action === "setExcluded") {
+    row.excluded = Boolean(input.excluded);
+    if (!row.excluded) {
+      row.exactDuplicate = false;
+      row.issues = row.issues.filter(issue => issue.type !== "exact-duplicate");
+    }
+  } else if (input.action === "keepPossibleDuplicate") {
+    row.possibleDuplicate = false;
+    row.issues = row.issues.filter(issue => issue.type !== "possible-duplicate");
+  } else {
+    if (!input.column) throw new Error("A column is required for this review action.");
+    const profile = profiles.find(candidate => candidate.name === input.column);
+    if (!profile) throw new Error("That column is not available for this import.");
+    if (input.action === "undoChange") {
+      const index = [...row.changes].map(change => change.column).lastIndexOf(input.column);
+      if (index < 0) throw new Error("There is no automatic change to undo for this cell.");
+      const change = row.changes[index];
+      row.cleanedValues[input.column] = change.from;
+      row.changes.splice(index, 1);
+    } else {
+      const rawValue = input.value ?? "";
+      const value = profile.kind === "number" ? parseNumber(rawValue) : profile.kind === "date" ? parseDate(rawValue, profile.datePreference) : profile.kind === "category" ? (text(rawValue).replace(/\s+/g, " ").trim() || UNKNOWN) : rawValue;
+      if (profile.kind === "number" && value === null && !missing(rawValue)) throw new Error("Enter a valid numeric value for this column.");
+      if (profile.kind === "date" && value === null && !missing(rawValue)) throw new Error("Enter a valid date value for this column.");
+      const previous = row.cleanedValues[input.column];
+      row.cleanedValues[input.column] = value;
+      row.changes.push({ column: input.column, from: previous, to: value, reason: "Edited during review" });
+    }
+    row.rowSignature = signatureFor(row.cleanedValues);
+  }
+  await updateImportRowReview({ importId: input.importId, rowNumber: input.rowNumber, cleanedValues: row.cleanedValues, changes: row.changes, issues: row.issues, excluded: row.excluded, possibleDuplicate: row.possibleDuplicate, isOutlier: row.isOutlier, rowSignature: row.rowSignature });
+  return { success: true };
+}
+
+export async function recalculateKpiImport(importId: string) {
+  const job = await getKpiImport(importId);
+  if (!job) throw new Error("Import job was not found.");
+  const profiles = asArray<ColumnProfile>(job.columnsJson);
+  if (!profiles.length) throw new Error("The import has no stored column profile to recalculate.");
+  await updateKpiImport(importId, { status: "analyzing", errorMessage: null, workerCheckpointJson: { phase: "review-recalculation" } });
+  return recalculateFromStoredRows(importId, profiles);
 }
 
 export async function processNextQueuedImport() {
@@ -310,7 +600,6 @@ export async function processNextQueuedImport() {
 
 async function runWorker() {
   const interval = Math.max(1000, Number(process.env.KPI_IMPORT_WORKER_POLL_MS || 5000));
-  // eslint-disable-next-line no-constant-condition
   while (true) {
     try { await processNextQueuedImport(); }
     catch (error) { console.error("[KPI import worker]", error); }

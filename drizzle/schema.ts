@@ -92,10 +92,11 @@ export const kpiImportRows = pgTable("kpi_import_rows", {
   issues: jsonb("issues"),
   excluded: boolean("excluded").notNull().default(false),
   possibleDuplicate: boolean("possible_duplicate").notNull().default(false),
+  isOutlier: boolean("is_outlier").notNull().default(false),
   exactDuplicate: boolean("exact_duplicate").notNull().default(false),
   rowSignature: varchar("row_signature", { length: 128 }).notNull(),
   createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
-}, table => [uniqueIndex("kpi_import_rows_import_row_uq").on(table.importId, table.rowNumber), uniqueIndex("kpi_import_rows_import_signature_uq").on(table.importId, table.rowSignature)]);
+}, table => [uniqueIndex("kpi_import_rows_import_row_uq").on(table.importId, table.rowNumber), index("kpi_import_rows_import_signature_idx").on(table.importId, table.rowSignature)]);
 
 export const kpiImportAggregates = pgTable("kpi_import_aggregates", {
   id: bigserial("id", { mode: "number" }).primaryKey(),

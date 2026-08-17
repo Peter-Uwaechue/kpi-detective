@@ -3,7 +3,7 @@ import { z } from "zod";
 import { createCandidateReferral } from "./db";
 import { createKpiImport, getKpiImport, getPreviewPage, resetKpiImportData, updateKpiImport } from "./kpiImportDb";
 import { createImportUploadUrl, getImportObjectInfo } from "./kpiImportStorage";
-import { processKpiImport } from "./kpiImportWorker";
+import { applyImportReviewAction, processKpiImport, recalculateKpiImport } from "./kpiImportWorker";
 import { invokeLLM } from "./_core/llm";
 import { getSessionCookieOptions } from "./_core/cookies";
 import { notifyOwner } from "./_core/notification";
@@ -94,6 +94,32 @@ export const appRouter = router({
       const job = await getKpiImport(input.importId, ctx.user.openId);
       if (!job) throw new Error("Import job was not found.");
       return getPreviewPage(input.importId, input.page, input.pageSize);
+    }),
+    reviewAction: protectedProcedure.input(z.object({
+      importId: z.string().uuid(),
+      rowNumber: z.number().int().positive(),
+      action: z.enum(["undoChange", "setExcluded", "keepPossibleDuplicate", "editValue"]),
+      column: z.string().trim().min(1).max(255).optional(),
+      value: z.string().max(2000).nullable().optional(),
+      excluded: z.boolean().optional(),
+    })).mutation(async ({ input, ctx }) => {
+      const job = await getKpiImport(input.importId, ctx.user.openId);
+      if (!job) throw new Error("Import job was not found.");
+      if (job.status !== "complete") throw new Error("Wait for the import to finish before reviewing cleaned data.");
+      return applyImportReviewAction(input);
+    }),
+    recalculate: protectedProcedure.input(z.object({ importId: z.string().uuid() })).mutation(async ({ input, ctx }) => {
+      const job = await getKpiImport(input.importId, ctx.user.openId);
+      if (!job) throw new Error("Import job was not found.");
+      if (job.status !== "complete") throw new Error("This import is not ready for recalculation.");
+      try {
+        const analysis = await recalculateKpiImport(input.importId);
+        return { importId: input.importId, status: "complete" as const, analysis };
+      } catch (error) {
+        const errorMessage = error instanceof Error ? error.message.slice(0, 4000) : "The import could not be recalculated.";
+        await updateKpiImport(input.importId, { status: "failed", errorMessage, completedAt: new Date() });
+        throw new Error(errorMessage);
+      }
     }),
     retry: protectedProcedure.input(z.object({ importId: z.string().uuid() })).mutation(async ({ input, ctx }) => {
       const job = await getKpiImport(input.importId, ctx.user.openId);

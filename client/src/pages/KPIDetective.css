@@ -133,3 +133,6 @@
 .print-action { min-height: 34px; padding: 0 12px; font-size: 11px; }
 @media (max-width: 900px) { .insight-grid { grid-template-columns: 1fr; } }
 @media (max-width: 720px) { .dashboard-header-actions { gap: 6px; } .dashboard-header-actions .print-action { display: none; } .dashboard-header-actions .outline-action { padding: 0 9px; font-size: 10px; } }
+
+.cell-edit { max-width: 100%; padding: 0; overflow: hidden; border: 0; color: inherit; background: transparent; font: inherit; text-align: left; text-overflow: ellipsis; white-space: nowrap; }
+.cell-edit:hover { color: var(--mint-deep); text-decoration: underline; text-decoration-style: dotted; text-underline-offset: 3px; }

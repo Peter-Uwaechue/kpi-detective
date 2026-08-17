@@ -19,6 +19,7 @@ export type ImportRowWrite = {
   issues?: unknown[];
   excluded?: boolean;
   possibleDuplicate?: boolean;
+  isOutlier?: boolean;
   exactDuplicate?: boolean;
   rowSignature: string;
 };
@@ -84,6 +85,7 @@ export async function writeImportRows(importId: string, rows: ImportRowWrite[]) 
     issues: row.issues ?? [],
     excluded: row.excluded ?? false,
     possibleDuplicate: row.possibleDuplicate ?? false,
+    isOutlier: row.isOutlier ?? false,
     exactDuplicate: row.exactDuplicate ?? false,
     rowSignature: row.rowSignature,
   }))).onConflictDoUpdate({
@@ -95,6 +97,7 @@ export async function writeImportRows(importId: string, rows: ImportRowWrite[]) 
       issues: sql`excluded.issues`,
       excluded: sql`excluded.excluded`,
       possibleDuplicate: sql`excluded.possible_duplicate`,
+      isOutlier: sql`excluded.is_outlier`,
       exactDuplicate: sql`excluded.exact_duplicate`,
       rowSignature: sql`excluded.row_signature`,
     },
@@ -169,6 +172,49 @@ export async function getPreviewPage(importId: string, page: number, pageSize = 
     db.select({ total: count() }).from(kpiImportRows).where(eq(kpiImportRows.importId, importId)),
   ]);
   return { rows, total: Number(totalResult[0]?.total ?? 0), page: safePage, pageSize: safeSize };
+}
+
+export async function getAllImportRows(importId: string) {
+  const db = await getDb();
+  if (!db) throw unavailable();
+  return db.select().from(kpiImportRows).where(eq(kpiImportRows.importId, importId)).orderBy(asc(kpiImportRows.rowNumber));
+}
+
+export async function getImportRow(importId: string, rowNumber: number) {
+  const db = await getDb();
+  if (!db) throw unavailable();
+  const rows = await db.select().from(kpiImportRows).where(and(eq(kpiImportRows.importId, importId), eq(kpiImportRows.rowNumber, rowNumber))).limit(1);
+  return rows[0] ?? null;
+}
+
+export async function updateImportRowReview(input: {
+  importId: string;
+  rowNumber: number;
+  cleanedValues?: JsonObject;
+  changes?: unknown[];
+  issues?: unknown[];
+  excluded?: boolean;
+  possibleDuplicate?: boolean;
+  isOutlier?: boolean;
+  rowSignature?: string;
+}) {
+  const db = await getDb();
+  if (!db) throw unavailable();
+  await db.update(kpiImportRows).set({
+    cleanedValues: input.cleanedValues,
+    changes: input.changes,
+    issues: input.issues,
+    excluded: input.excluded,
+    possibleDuplicate: input.possibleDuplicate,
+    isOutlier: input.isOutlier,
+    rowSignature: input.rowSignature,
+  }).where(and(eq(kpiImportRows.importId, input.importId), eq(kpiImportRows.rowNumber, input.rowNumber)));
+}
+
+export async function clearImportAggregates(importId: string) {
+  const db = await getDb();
+  if (!db) throw unavailable();
+  await db.delete(kpiImportAggregates).where(eq(kpiImportAggregates.importId, importId));
 }
 
 export async function getImportAggregates(importId: string) {
