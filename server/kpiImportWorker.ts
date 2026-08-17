@@ -109,7 +109,9 @@ const parseDate = (value: unknown, preference: "day-first" | "month-first" | "am
     if (year < 100) year += year >= 70 ? 1900 : 2000;
     if (first > 12) return toIso(year, second, first);
     if (second > 12) return toIso(year, first, second);
-    return preference === "day-first" ? toIso(year, second, first) : toIso(year, first, second);
+    if (preference === "day-first") return toIso(year, second, first);
+    if (preference === "month-first") return toIso(year, first, second);
+    return null;
   }
   const namedDayFirst = raw.match(/^(\d{1,2})\s*[- ]\s*([A-Za-z]{3,9})\s*[-, ]\s*(\d{2,4})$/);
   const namedMonthFirst = raw.match(/^([A-Za-z]{3,9})\s+(\d{1,2}),?\s+(\d{2,4})$/);
@@ -124,17 +126,35 @@ const parseDate = (value: unknown, preference: "day-first" | "month-first" | "am
 };
 
 const inferDatePreference = (values: unknown[]): "day-first" | "month-first" | "ambiguous" => {
-  let dayFirst = 0;
-  let monthFirst = 0;
+  let dayFirstEvidence = 0;
+  let monthFirstEvidence = 0;
+  const dayFirstMonths = new Set<string>();
+  const monthFirstMonths = new Set<string>();
   values.forEach(value => {
     const parts = text(value).match(/^(\d{1,2})[/-](\d{1,2})[/-](\d{2,4})/);
     if (!parts) return;
     const first = Number(parts[1]);
     const second = Number(parts[2]);
-    if (first > 12 && second <= 12) dayFirst++;
-    if (second > 12 && first <= 12) monthFirst++;
+    let year = Number(parts[3]);
+    if (year < 100) year += year >= 70 ? 1900 : 2000;
+    if (first > 12 && second <= 12) { dayFirstEvidence++; return; }
+    if (second > 12 && first <= 12) { monthFirstEvidence++; return; }
+    const dayFirst = toIso(year, second, first);
+    const monthFirst = toIso(year, first, second);
+    if (dayFirst) dayFirstMonths.add(dayFirst.slice(0, 7));
+    if (monthFirst) monthFirstMonths.add(monthFirst.slice(0, 7));
   });
-  return dayFirst > monthFirst ? "day-first" : monthFirst > dayFirst ? "month-first" : "ambiguous";
+  if (dayFirstEvidence && !monthFirstEvidence) return "day-first";
+  if (monthFirstEvidence && !dayFirstEvidence) return "month-first";
+  if (dayFirstEvidence || monthFirstEvidence) return "ambiguous";
+  // When every slash date is ambiguous, choose the interpretation with the
+  // tighter observed month range. A single April–June series should not become
+  // scattered across January–December simply because dates are <= 12.
+  if (dayFirstMonths.size && monthFirstMonths.size) {
+    if (dayFirstMonths.size < monthFirstMonths.size) return "day-first";
+    if (monthFirstMonths.size < dayFirstMonths.size) return "month-first";
+  }
+  return "ambiguous";
 };
 
 const inferProfiles = (headers: string[], samples: RawRecord[]): ColumnProfile[] => headers.map(name => {
@@ -246,7 +266,7 @@ function aggregateRow(cleaned: RawRecord, profiles: ColumnProfile[], metric: Col
 function analysisFromAggregates(input: { aggregates: Awaited<ReturnType<typeof getImportAggregates>>; profiles: ColumnProfile[]; usableRows: number }): KpiAnalysis {
   const metric = findMetric(input.profiles);
   const date = findDate(input.profiles);
-  if (!metric || !date) throw new Error("We could not identify both a reliable date column and numeric KPI. Ensure at least 70% of non-empty values in each field are valid dates or amounts.");
+  if (!metric || !date) throw new Error("We could not identify both a reliable date column and numeric KPI. Ensure at least 75% of non-empty values in each field are valid dates or amounts.");
   const totalRows = input.aggregates.filter(item => item.dimension === "__total__" && item.segment === "__all__" && item.metricColumn === metric.name);
   const periods = Array.from(new Set(totalRows.map(row => row.period))).sort();
   if (periods.length < 2) throw new Error("At least two dated periods are required to explain a KPI change.");
