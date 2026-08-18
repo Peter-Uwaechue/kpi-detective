@@ -18,7 +18,7 @@ export type PeterAggregate = {
 
 type PeriodValues = { previous: number; current: number; impact: number; records: number };
 export type PeterFactor = PeriodValues & { dimension: string; value: string; confidence: number };
-export type PeterIntent = "top_n" | "factor_rank" | "compare" | "counterfactual" | "overlap" | "explain" | "recommend" | "drilldown" | "unsupported";
+export type PeterIntent = "top_n" | "factor_rank" | "compare" | "counterfactual" | "overlap" | "date_detail" | "explain" | "recommend" | "drilldown" | "unsupported";
 
 export type PeterQueryPlan = {
   intent: PeterIntent;
@@ -44,6 +44,8 @@ export type PeterAnswer = {
   };
 };
 
+export const isAnswerablePeterSuggestion = (response: PeterAnswer) => response.plan.intent !== "unsupported" && response.evidence.items.length > 0 && !response.answer.startsWith("I’m not fully sure") && !response.answer.startsWith("I can’t answer");
+
 type ComparisonRow = { values: Record<string, unknown>; metric: number; period: string };
 
 const PETER_PLANNER_TIMEOUT_MS = 4_000;
@@ -59,10 +61,12 @@ const ordinal = (value: number) => {
   return `${value}${({ 1: "st", 2: "nd", 3: "rd" } as Record<number, string>)[value % 10] ?? "th"}`;
 };
 const pluralise = (value: string, count: number) => count === 1 ? value : value.endsWith("y") ? `${value.slice(0, -1)}ies` : `${value}s`;
+const readableDate = (value: string) => new Intl.DateTimeFormat(undefined, { month: "long", day: "numeric", year: "numeric", timeZone: "UTC" }).format(new Date(`${value}T00:00:00Z`));
 
-const topicForQuestion = (question: string): "top" | "compare" | "counterfactual" | "overlap" | "recommend" | "drilldown" | "explain" | "clarify" => {
+const topicForQuestion = (question: string): "top" | "compare" | "counterfactual" | "overlap" | "date_detail" | "recommend" | "drilldown" | "explain" | "clarify" => {
   const text = normalise(question);
   if (/\boverlap\b|\bco-?occur(?:ring|rence)?\b|\btogether with\b/.test(text)) return "overlap";
+  if (/\bdates?\b|\bdays?\b|\bwhen\b/.test(text)) return "date_detail";
   if (/\baside\b|\bbesides\b|\bother\b|\bexcluding\b|\bexcept\b|\bafter\b/.test(text)) return "compare";
   if (/\btop\b|\bhighest\b|\blargest\b|\bbiggest\b|\brank(?:ed|ing)?\b/.test(text)) return "top";
   if (/\bwhat if\b|\bstayed flat\b|\bwithout\b/.test(text)) return "counterfactual";
@@ -183,6 +187,7 @@ export const planPeterQuestion = (question: string, analysis: KpiAnalysis, profi
   const asksOther = /\baside\b|\bbesides\b|\bother\b|\bexcluding\b|\bexcept\b|\bafter\b/.test(text);
   const asksExplicitTopList = /\btop\s+(?:\d+|one|two|three|four|five|six|seven|eight|nine|ten)\b/.test(text);
   const asksRecommendation = /\bfix\b|\bpriority\b|\bprioritise\b|\bprioritize\b|\bwhat should\b|\bnext step\b|\bfocus on\b/.test(text);
+  const asksDateDetail = /\bdates?\b|\bdays?\b|\bwhen\b/.test(text);
   const asksOverlap = /\boverlap\b|\bco-?occur(?:ring|rence)?\b|\btogether with\b/.test(text);
   const asksCounterfactual = /\bwhat if\b|\bstayed flat\b|\bwithout\b/.test(text);
   const asksCompanyOrRows = /\bcompany\b|\bcompanies\b|\bcustomer\b|\bclient\b|\bemployer\b|\brow\b|\brows\b|\btransaction\b/.test(text);
@@ -191,6 +196,9 @@ export const planPeterQuestion = (question: string, analysis: KpiAnalysis, profi
   const asksWhy = /\bwhy\b|\bcause\b|\bexplain\b|\bchanged?\b|\bdrop\b|\bdecline\b|\bincrease\b/.test(text);
   const exclusions = asksOther && entity ? [entity] : [];
   const rankBy: PeterQueryPlan["rankBy"] = /\bfactor\b|\bimpact\b|\baffected\b|\bchange\b/.test(text) && !/\btop\s+\d+\s+(?:countries|country|products|product|companies|company|regions|region)\b/.test(text) ? "absolute_change" : "current";
+  if (asksDateDetail && !entity && !rows) return { intent: "date_detail", dimension: null, entity: null, exclusions: [], limit: 3, rankBy: "absolute_change", needsRows: true, reason: "resolve_date_scope_in_rows" };
+  if (asksDateDetail && !entity) return { intent: "unsupported", dimension: null, entity: null, exclusions: [], limit: 0, rankBy: "current", needsRows: false, reason: "date_scope_not_found" };
+  if (asksDateDetail) return { intent: "date_detail", dimension: mentionedFactor?.dimension ?? dimension, entity, exclusions: [], limit: 3, rankBy: "absolute_change", needsRows: true, reason: "date_detail_request" };
   if (asksOverlap && !entity && !rows) return { intent: "overlap", dimension: null, entity: null, exclusions: [], limit: 5, rankBy: "absolute_change", needsRows: true, reason: "resolve_overlap_scope_in_rows" };
   if (asksOverlap && !entity) return { intent: "unsupported", dimension: null, entity: null, exclusions: [], limit: 0, rankBy: "current", needsRows: false, reason: "overlap_scope_not_found" };
   if (asksOverlap) return { intent: "overlap", dimension: mentionedFactor?.dimension ?? dimension, entity, exclusions: [], limit: 5, rankBy: "absolute_change", needsRows: true, reason: "co_occurrence_request" };
@@ -225,7 +233,7 @@ export const resolvePeterPlanWithAi = async (question: string, analysis: KpiAnal
           schema: {
             type: "object",
             properties: {
-              intent: { type: "string", enum: ["top_n", "compare", "counterfactual", "overlap", "explain", "recommend", "drilldown", "unsupported"] },
+              intent: { type: "string", enum: ["top_n", "compare", "counterfactual", "overlap", "date_detail", "explain", "recommend", "drilldown", "unsupported"] },
               dimension: { type: ["string", "null"] },
               entity: { type: ["string", "null"] },
               exclusion: { type: ["string", "null"] },
@@ -361,6 +369,29 @@ export const answerPeterQuery = (input: { question: string; analysis: KpiAnalysi
     if (!items.length) return unsupported("There were no negative measurable dimension changes in the selected comparison.");
     const listed = items.map((item, index) => `${index + 1}. ${item.dimension}: ${item.value} (${signedMetric(item.impact, analysis.currencySymbol)})`).join("; ");
     return { answer: `Based on the cleaned data, prioritise: ${listed}. These are the largest negative dimension-level movements between ${previous} and ${current}; they are evidence-backed priorities, not an external business diagnosis.`, confidence: Math.round(items.reduce((total, item) => total + item.confidence, 0) / items.length), plan, evidence: { dimension: null, items, exclusionApplied: [], source } };
+  }
+  if (plan.intent === "date_detail") {
+    if (!rows || !plan.dimension || !plan.entity) return askForClarification("I need a named segment and its cleaned-row evidence to calculate date-level movement.");
+    const scopeFactor = factors.find(factor => factor.dimension === plan.dimension && normalise(factor.value) === normalise(plan.entity ?? ""));
+    if (!scopeFactor) return askForClarification(`I could not find ${plan.dimension}: ${plan.entity} in the cleaned data.`);
+    const dailyTotals = new Map<string, { previous: number; current: number }>();
+    rowsForFactor(rows, scopeFactor, analysis).forEach(row => {
+      const rawDate = safeText(row.values[analysis.dateColumn]);
+      if (!/^\d{4}-\d{2}-\d{2}$/.test(rawDate)) return;
+      const day = rawDate.slice(-2);
+      const entry = dailyTotals.get(day) ?? { previous: 0, current: 0 };
+      if (row.period === analysis.previousPeriod) entry.previous += row.metric;
+      else entry.current += row.metric;
+      dailyTotals.set(day, entry);
+    });
+    const items = Array.from(dailyTotals, ([day, values]) => ({ dimension: "Date", value: day, previous: values.previous, current: values.current, impact: values.current - values.previous, records: 0, confidence: scopeFactor.confidence })).filter(item => item.impact !== 0).sort(byAbsoluteChange).slice(0, plan.limit);
+    if (!items.length) return unsupported(`No comparable daily movement was found within ${scopeFactor.dimension}: ${scopeFactor.value}.`);
+    const listed = items.map((item, index) => {
+      const previousDate = `${analysis.previousPeriod}-${item.value}`;
+      const currentDate = `${analysis.currentPeriod}-${item.value}`;
+      return `${index + 1}. ${readableDate(previousDate)} → ${readableDate(currentDate)} (${plainMetric(item.previous, analysis.currencySymbol)} → ${plainMetric(item.current, analysis.currencySymbol)}; ${signedMetric(item.impact, analysis.currencySymbol)})`;
+    }).join("; ");
+    return { answer: `Within ${scopeFactor.dimension}: ${scopeFactor.value}, the biggest comparable date-level movements were: ${listed}. Each pair compares the same day of month across ${previous} and ${current}; it is evidence within this segment, not a claim that one date alone caused the full KPI change.`, confidence: scopeFactor.confidence, plan, evidence: { dimension: "Date", items, exclusionApplied: [], source: "cleaned_rows" } };
   }
   if (plan.intent === "overlap") {
     if (!rows || !plan.dimension || !plan.entity) return askForClarification("I need a named segment and its cleaned-row evidence to calculate overlapping factors.");

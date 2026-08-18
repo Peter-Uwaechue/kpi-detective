@@ -202,17 +202,13 @@ function ChatPanel({ analysis, dataset, importId }: { analysis: KpiAnalysis; dat
   const [messages, setMessages] = useState<ChatMessage[]>([{ id: "welcome", role: "assistant", text: `Peter’s analysis found a change in ${analysis.metricLabel.toLowerCase()}. Ask why a segment shifted, which customer contributed, or what the KPI would have been without a driver.`, confidence: analysis.confidence }]);
   const ask = trpc.kpi.ask.useMutation();
   const askImport = trpc.kpi.askImport.useMutation();
+  const importSuggestions = trpc.kpi.suggestions.useQuery({ importId: importId ?? "" }, { enabled: Boolean(importId), staleTime: 60_000 });
   const primaryDriver = analysis.causes[0]?.value ?? "the leading driver";
-  const suggestionPool = useMemo(() => [
+  const localSuggestionPool = useMemo(() => analysis.causes[0] ? [
     `Why did ${primaryDriver} change?`,
-    `Which companies changed most within ${primaryDriver}?`,
     `What if ${primaryDriver} had stayed flat?`,
-    `Which factors overlap with ${primaryDriver}?`,
-    `Which dates moved most within ${primaryDriver}?`,
-    "What do I fix in the company?",
-    "Which customer contributed the most?",
-    "What should I investigate next?",
-  ], [primaryDriver]);
+  ] : [], [analysis.causes, primaryDriver]);
+  const suggestionPool = importId ? (importSuggestions.data ?? []) : localSuggestionPool;
   const suggestions = suggestionPool.filter(suggestion => !askedSuggestions.includes(suggestion)).slice(0, 3);
   const send = async (customQuestion?: string) => {
     const text = (customQuestion ?? question).trim();

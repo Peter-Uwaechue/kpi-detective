@@ -6,7 +6,7 @@ import { createImportUploadUrl, getImportObjectInfo } from "./kpiImportStorage";
 import { applyImportReviewAction, processKpiImport, recalculateKpiImport } from "./kpiImportWorker";
 import { invokeLLM } from "./_core/llm";
 import { fallbackAnalystAnswer, type AnalystContext } from "./kpiAnalyst";
-import { answerPeterQuery, planPeterQuestion, resolvePeterPlanWithAi } from "./kpiAnalystQuery";
+import { answerPeterQuery, isAnswerablePeterSuggestion, planPeterQuestion, resolvePeterPlanWithAi } from "./kpiAnalystQuery";
 import type { ColumnProfile, KpiAnalysis } from "../shared/kpiEngine";
 import { getSessionCookieOptions } from "./_core/cookies";
 import { notifyOwner } from "./_core/notification";
@@ -214,7 +214,9 @@ export const appRouter = router({
       const profiles = Array.isArray(job.columnsJson) ? job.columnsJson as ColumnProfile[] : [];
       const aggregates = await getImportAggregates(input.importId);
       const deterministicPlan = planPeterQuestion(input.question, analysis, profiles, aggregates);
-      let plan = await resolvePeterPlanWithAi(input.question, analysis, profiles, aggregates, deterministicPlan);
+      let plan = deterministicPlan.intent === "unsupported"
+        ? await resolvePeterPlanWithAi(input.question, analysis, profiles, aggregates, deterministicPlan)
+        : deterministicPlan;
       const rows = plan.needsRows ? await getAllImportRows(input.importId) : undefined;
       if (rows && plan.reason !== "structured_ai_plan") plan = planPeterQuestion(input.question, analysis, profiles, aggregates, rows);
       const response = answerPeterQuery({ question: input.question, analysis, profiles, aggregates, rows, plan });
@@ -223,6 +225,33 @@ export const appRouter = router({
         generated: false,
         confidence: response.confidence,
       };
+    }),
+    suggestions: protectedProcedure.input(z.object({
+      importId: z.string().uuid(),
+    })).query(async ({ input, ctx }) => {
+      const job = await getKpiImport(input.importId, ctx.user.openId);
+      if (!job || !validImportedAnalysis(job.analysisJson)) return [];
+      const analysis = job.analysisJson;
+      const profiles = Array.isArray(job.columnsJson) ? job.columnsJson as ColumnProfile[] : [];
+      const primaryDriver = analysis.causes[0]?.value;
+      if (!primaryDriver) return [];
+      const candidates = [
+        `Why did ${primaryDriver} change?`,
+        `Which companies changed most within ${primaryDriver}?`,
+        `What if ${primaryDriver} had stayed flat?`,
+        `Which factors overlap with ${primaryDriver}?`,
+        `Which dates moved most within ${primaryDriver}?`,
+        "What do I fix in the company?",
+        "Which customer contributed the most?",
+        "What should I investigate next?",
+      ];
+      const [aggregates, rows] = await Promise.all([getImportAggregates(input.importId), getAllImportRows(input.importId)]);
+      return candidates.filter(question => {
+        const plan = planPeterQuestion(question, analysis, profiles, aggregates, rows);
+        if (plan.intent === "unsupported") return false;
+        const response = answerPeterQuery({ question, analysis, profiles, aggregates, rows, plan });
+        return isAnswerablePeterSuggestion(response);
+      });
     }),
   }),
   referrals: router({

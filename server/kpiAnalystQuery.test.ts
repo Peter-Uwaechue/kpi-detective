@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { ColumnProfile, KpiAnalysis } from "../shared/kpiEngine";
-import { answerPeterQuery, planPeterQuestion, type PeterAggregate, type PeterImportRow } from "./kpiAnalystQuery";
+import { answerPeterQuery, isAnswerablePeterSuggestion, planPeterQuestion, type PeterAggregate, type PeterImportRow } from "./kpiAnalystQuery";
 
 const analysis: KpiAnalysis = {
   metric: "total_laid_off",
@@ -123,6 +123,17 @@ describe("Ask Peter full-cleaned-data query service", () => {
     expect(result.answer).toContain("not an external business diagnosis");
   });
 
+  it("calculates date-level movement as a distinct cleaned-row query", () => {
+    const result = ask("Which dates moved most within United States?");
+
+    expect(result.plan.intent).toBe("date_detail");
+    expect(result.answer).toContain("Within Country: United States, the biggest comparable date-level movements were");
+    expect(result.answer).toContain("February 3, 2023 → March 3, 2023");
+    expect(result.evidence.dimension).toBe("Date");
+    expect(result.evidence.source).toBe("cleaned_rows");
+    expect(isAnswerablePeterSuggestion(result)).toBe(true);
+  });
+
   it("calculates overlapping factors as a distinct cleaned-row query", () => {
     const result = ask("Which factors overlap with United States?");
 
@@ -157,6 +168,12 @@ describe("Ask Peter full-cleaned-data query service", () => {
     expect(result.plan.intent).toBe("explain");
     expect(result.answer).toContain("Company: Atlas Labs moved");
     expect(result.evidence.source).toBe("cleaned_rows");
+  });
+
+  it("does not mark clarification responses as answerable suggestions", () => {
+    const result = ask("Which factors overlap?");
+
+    expect(isAnswerablePeterSuggestion(result)).toBe(false);
   });
 
   it("asks for clarification for an unrecognised free-typed request instead of selecting a nearest driver", () => {
