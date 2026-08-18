@@ -84,3 +84,83 @@ describe("KPI import cleaning transparency", () => {
     expect(whitespaceLog?.detail).toContain("Alias reconciliation is reported separately");
   });
 });
+
+
+describe("KPI import real-world data-shape matrix", () => {
+  const freshStats = () => ({
+    sourceRows: 0,
+    usableRows: 0,
+    exactDuplicates: 0,
+    missingNumeric: 0,
+    invalidNumeric: 0,
+    dateChanges: 0,
+    numericChanges: 0,
+    categoryChanges: 0,
+    fuzzyCategoryMerges: 0,
+    fuzzyCategoryRows: 0,
+    possibleDuplicates: 0,
+    outliers: 0,
+  });
+
+  it("derives a selected Amount from Quantity and UnitPrice while standardising mixed date formats with timestamps", () => {
+    const rows: RawRecord[] = [
+      { InvoiceDate: "2026-05-29 09:50:00", Quantity: "2", UnitPrice: "$10.00", Discount: "1.50", Tax: "0.50", Country: "United States" },
+      { InvoiceDate: "28-May-2026", Quantity: "3", UnitPrice: "€4.00", Discount: "0", Tax: "0.60", Country: "United States" },
+      { InvoiceDate: "04/09/2026", Quantity: "4", UnitPrice: "NGN 5.00", Discount: "0", Tax: "0", Country: "United States" },
+      { InvoiceDate: "05/10/2026", Quantity: "1", UnitPrice: "6.00", Discount: "TBD", Tax: "cash", Country: "United States" },
+      { InvoiceDate: "10-Oct-2026", Quantity: "2", UnitPrice: "TBD", Discount: "0", Tax: "0", Country: "United States" },
+    ];
+    const profiles = __kpiImportWorkerTesting.inferProfiles(Object.keys(rows[0]!), rows);
+    const metric = __kpiImportWorkerTesting.findMetric(profiles);
+    const date = __kpiImportWorkerTesting.findDate(profiles);
+    const stats = freshStats();
+    const cleaned = rows.map(row => __kpiImportWorkerTesting.cleanRow(row, profiles, stats));
+
+    expect(metric).toMatchObject({ name: "__derived_amount__", isSelectedMetric: true, label: "Derived Amount" });
+    expect(metric?.selectionReason).toContain("Quantity × UnitPrice");
+    expect(date).toMatchObject({ name: "InvoiceDate", kind: "date", datePreference: "day-first" });
+    expect(cleaned.map(row => row.cleanedValues.InvoiceDate)).toEqual(["2026-05-29", "2026-05-28", "2026-09-04", "2026-10-05", "2026-10-10"]);
+    expect(cleaned.map(row => row.cleanedValues.__derived_amount__)).toEqual([19, 12.6, 20, 6, null]);
+    expect(cleaned[0]?.changes.some(change => change.column === "__derived_amount__" && change.reason.includes("Quantity × UnitPrice"))).toBe(true);
+    expect(cleaned[4]?.issues.some(issue => issue.column === "__derived_amount__" && issue.type === "missing")).toBe(true);
+  });
+
+  it("uses Quantity × Cost and applies separate percentage discount and tax when no sales-price column exists", () => {
+    const rows: RawRecord[] = [
+      { TransactionDate: "2026-04-01", Quantity: "10", UnitCost: "5", DiscountPercent: "10", VAT: "20", Store: "A" },
+      { TransactionDate: "2026-05-01", Quantity: "2", UnitCost: "8", DiscountPercent: "0", VAT: "0", Store: "A" },
+    ];
+    const profiles = __kpiImportWorkerTesting.inferProfiles(Object.keys(rows[0]!), rows);
+    const metric = __kpiImportWorkerTesting.findMetric(profiles);
+    const cleaned = __kpiImportWorkerTesting.cleanRow(rows[0]!, profiles, freshStats());
+
+    expect(metric).toMatchObject({ name: "__derived_amount__", metricRecipe: { kind: "quantity_times_cost", quantityColumn: "Quantity", unitValueColumn: "UnitCost", discountColumn: "DiscountPercent", taxColumn: "VAT" } });
+    expect(cleaned.cleanedValues.__derived_amount__).toBe(55);
+  });
+
+  it("prefers a labelled combined Amount over a possible derived amount", () => {
+    const rows: RawRecord[] = [
+      { Date: "2026-04-01", Quantity: "2", UnitPrice: "10", Amount: "$17.50" },
+      { Date: "2026-05-01", Quantity: "3", UnitPrice: "10", Amount: "$30.00" },
+    ];
+    const metric = __kpiImportWorkerTesting.findMetric(__kpiImportWorkerTesting.inferProfiles(Object.keys(rows[0]!), rows));
+
+    expect(metric).toMatchObject({ name: "Amount", isSelectedMetric: true });
+    expect(metric?.selectionReason).toContain("labelled monetary column");
+  });
+
+  it("selects and discloses a deterministic best numeric fallback instead of rejecting an otherwise analysable file", () => {
+    const rows: RawRecord[] = [
+      { Date: "2026-04-01", Forecast: "100", Target: "120", Region: "East" },
+      { Date: "2026-05-01", Forecast: "140", Target: "120", Region: "West" },
+    ];
+    const profiles = __kpiImportWorkerTesting.inferProfiles(Object.keys(rows[0]!), rows);
+    const metric = __kpiImportWorkerTesting.findMetric(profiles);
+    const logs = __kpiImportWorkerTesting.logsFromStats(freshStats(), metric);
+
+    expect(metric).toMatchObject({ name: "Forecast", isSelectedMetric: true });
+    expect(metric?.selectionReason).toContain("highest-confidence usable numeric column");
+    expect(logs[0]).toMatchObject({ key: "metric", title: "KPI selected", count: 1 });
+    expect(logs[0]?.detail).toContain("Forecast");
+  });
+});

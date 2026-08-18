@@ -26,6 +26,12 @@ const UNKNOWN = "Unknown";
 const PROFILE_MIN_VALID_RATE = 0.75;
 const MAX_FUZZY_CATEGORY_VALUES = 400;
 const REVENUE_TERMS = ["revenue", "sales", "amount", "total", "value", "gmv", "income", "turnover", "net", "purchase", "spend", "price", "cost", "profit"];
+const DIRECT_KPI_TERMS = ["revenue", "sales", "amount", "total", "value", "gmv", "income", "turnover", "net", "purchase", "spend", "profit"];
+const QUANTITY_TERMS = ["quantity", "qty", "units", "unit count", "items", "volume"];
+const UNIT_PRICE_TERMS = ["unit price", "unitprice", "price", "rate"];
+const COST_TERMS = ["unit cost", "unitcost", "cost"];
+const DISCOUNT_TERMS = ["discount", "rebate", "markdown"];
+const TAX_TERMS = ["tax", "vat", "gst", "sales tax"];
 const DATE_TERMS = ["date", "day", "time", "month", "week", "created", "ordered", "purchased", "transaction"];
 const CATEGORY_TERMS = ["region", "state", "city", "location", "product", "category", "channel", "customer", "client", "company", "employer", "industry", "sector", "country", "nation", "stage", "segment", "store", "department", "brand", "type"];
 const IDENTIFIER_PATTERN = /\b(id|order|invoice|transaction|reference|sku|code)\b/i;
@@ -33,7 +39,23 @@ const CURRENCY_CODE_PATTERN = /\b(NGN|USD|EUR|GBP|CAD|AUD|ZAR|KES|GHS|AED|INR)\b
 
 type RawRecord = Record<string, unknown>;
 type ColumnKind = "date" | "number" | "category" | "identifier" | "unknown";
-type ColumnProfile = { name: string; kind: ColumnKind; confidence: number; datePreference?: "day-first" | "month-first" | "ambiguous" };
+type MetricRecipe = {
+  kind: "quantity_times_price" | "quantity_times_cost";
+  quantityColumn: string;
+  unitValueColumn: string;
+  discountColumn?: string;
+  taxColumn?: string;
+};
+type ColumnProfile = {
+  name: string;
+  kind: ColumnKind;
+  confidence: number;
+  datePreference?: "day-first" | "month-first" | "ambiguous";
+  isSelectedMetric?: boolean;
+  label?: string;
+  selectionReason?: string;
+  metricRecipe?: MetricRecipe;
+};
 type CellChange = { column: string; from: unknown; to: unknown; reason: string };
 type DataIssue = { type: "possible-duplicate" | "outlier" | "invalid-number" | "ambiguous-date" | "missing" | "exact-duplicate"; column?: string; message: string };
 type WorkerStats = {
@@ -132,7 +154,10 @@ const inferDatePreference = (values: unknown[]): "day-first" | "month-first" | "
   const dayFirstMonths = new Set<string>();
   const monthFirstMonths = new Set<string>();
   values.forEach(value => {
-    const parts = text(value).match(/^(\d{1,2})[/-](\d{1,2})[/-](\d{2,4})/);
+    const raw = text(value);
+    if (/^\d{1,2}\s*[- ]\s*[A-Za-z]{3,9}\s*[-, ]\s*\d{2,4}/.test(raw)) { dayFirstEvidence++; return; }
+    if (/^[A-Za-z]{3,9}\s+\d{1,2},?\s+\d{2,4}/.test(raw)) { monthFirstEvidence++; return; }
+    const parts = raw.match(/^(\d{1,2})[/-](\d{1,2})[/-](\d{2,4})/);
     if (!parts) return;
     const first = Number(parts[1]);
     const second = Number(parts[2]);
@@ -158,7 +183,7 @@ const inferDatePreference = (values: unknown[]): "day-first" | "month-first" | "
   return "ambiguous";
 };
 
-const inferProfiles = (headers: string[], samples: RawRecord[]): ColumnProfile[] => headers.map(name => {
+const inferBaseProfiles = (headers: string[], samples: RawRecord[]): ColumnProfile[] => headers.map(name => {
   const values = samples.map(row => row[name]).filter(value => !missing(value));
   if (!values.length) return { name, kind: "unknown", confidence: 0 };
   const preference = inferDatePreference(values);
@@ -175,6 +200,34 @@ const inferProfiles = (headers: string[], samples: RawRecord[]): ColumnProfile[]
   if (distinctRate <= 0.96 || categoryHint > 0) return { name, kind: "category", confidence: Math.round(Math.min(95, 70 + categoryHint * 6)) };
   return { name, kind: "unknown", confidence: 48 };
 });
+
+const headerMatches = (name: string, terms: string[]) => terms.some(term => normalise(name) === term || normalise(name).includes(term));
+
+const selectMetricProfile = (profiles: ColumnProfile[]): ColumnProfile | null => {
+  const numeric = profiles.filter(profile => profile.kind === "number");
+  const direct = numeric.filter(profile => headerMatches(profile.name, DIRECT_KPI_TERMS)).sort((left, right) => headerScore(right.name, DIRECT_KPI_TERMS) - headerScore(left.name, DIRECT_KPI_TERMS) || right.confidence - left.confidence)[0];
+  if (direct) return { ...direct, isSelectedMetric: true, label: direct.name, selectionReason: `Selected the labelled monetary column “${direct.name}”.` };
+  const quantity = numeric.filter(profile => headerMatches(profile.name, QUANTITY_TERMS)).sort((left, right) => headerScore(right.name, QUANTITY_TERMS) - headerScore(left.name, QUANTITY_TERMS))[0];
+  const unitPrice = numeric.filter(profile => headerMatches(profile.name, UNIT_PRICE_TERMS)).sort((left, right) => headerScore(right.name, UNIT_PRICE_TERMS) - headerScore(left.name, UNIT_PRICE_TERMS))[0];
+  const unitCost = numeric.filter(profile => headerMatches(profile.name, COST_TERMS)).sort((left, right) => headerScore(right.name, COST_TERMS) - headerScore(left.name, COST_TERMS))[0];
+  if (quantity && (unitPrice || unitCost)) {
+    const unitValue = unitPrice ?? unitCost!;
+    const discount = numeric.find(profile => headerMatches(profile.name, DISCOUNT_TERMS));
+    const tax = numeric.find(profile => headerMatches(profile.name, TAX_TERMS));
+    const recipe: MetricRecipe = { kind: unitPrice ? "quantity_times_price" : "quantity_times_cost", quantityColumn: quantity.name, unitValueColumn: unitValue.name, ...(discount ? { discountColumn: discount.name } : {}), ...(tax ? { taxColumn: tax.name } : {}) };
+    const adjustments = [discount && `less ${discount.name}`, tax && `plus ${tax.name}`].filter(Boolean).join("; ");
+    return { name: "__derived_amount__", kind: "number", confidence: Math.min(quantity.confidence, unitValue.confidence), isSelectedMetric: true, label: "Derived Amount", selectionReason: `Calculated as ${quantity.name} × ${unitValue.name}${adjustments ? `; ${adjustments}` : ""}.`, metricRecipe: recipe };
+  }
+  const fallback = numeric.filter(profile => !headerMatches(profile.name, QUANTITY_TERMS) && !headerMatches(profile.name, DISCOUNT_TERMS) && !headerMatches(profile.name, TAX_TERMS)).sort((left, right) => headerScore(right.name, REVENUE_TERMS) - headerScore(left.name, REVENUE_TERMS) || right.confidence - left.confidence || left.name.localeCompare(right.name))[0];
+  return fallback ? { ...fallback, isSelectedMetric: true, label: fallback.name, selectionReason: `No labelled monetary total or complete quantity-price pair was found; selected the highest-confidence usable numeric column “${fallback.name}”.` } : null;
+};
+
+const inferProfiles = (headers: string[], samples: RawRecord[]): ColumnProfile[] => {
+  const profiles = inferBaseProfiles(headers, samples);
+  const selectedMetric = selectMetricProfile(profiles);
+  if (!selectedMetric) return profiles;
+  return [...profiles.map(profile => profile.name === selectedMetric.name ? selectedMetric : profile), ...(selectedMetric.metricRecipe ? [selectedMetric] : [])];
+};
 
 async function* csvRecords(stream: Readable): AsyncGenerator<RawRecord> {
   const parser = stream.pipe(parse({ columns: true, bom: true, relax_column_count: true, skip_empty_lines: true, trim: false }));
@@ -203,7 +256,7 @@ export async function* streamRecords(fileName: string, stream: Readable): AsyncG
   else throw new Error("KPI Detective supports streaming CSV and XLSX. Convert legacy .xls files before import.");
 }
 
-const findMetric = (profiles: ColumnProfile[]) => profiles.filter(profile => profile.kind === "number").sort((a, b) => headerScore(b.name, REVENUE_TERMS) - headerScore(a.name, REVENUE_TERMS) || b.confidence - a.confidence)[0];
+const findMetric = (profiles: ColumnProfile[]) => profiles.find(profile => profile.isSelectedMetric && profile.kind === "number") ?? profiles.filter(profile => profile.kind === "number").sort((a, b) => headerScore(b.name, REVENUE_TERMS) - headerScore(a.name, REVENUE_TERMS) || b.confidence - a.confidence)[0];
 const findDate = (profiles: ColumnProfile[]) => profiles.filter(profile => profile.kind === "date").sort((a, b) => headerScore(b.name, DATE_TERMS) - headerScore(a.name, DATE_TERMS) || b.confidence - a.confidence)[0];
 const normaliseCategory = (value: unknown) => (value === null || value === undefined ? "" : String(value)).replace(/\u00a0/g, " ").replace(/\s+/g, " ").trim() || UNKNOWN;
 
@@ -213,6 +266,30 @@ function cleanRow(row: RawRecord, profiles: ColumnProfile[], stats: WorkerStats)
   const changes: CellChange[] = [];
   const issues: DataIssue[] = [];
   for (const profile of profiles) {
+    if (profile.metricRecipe) {
+      const recipe = profile.metricRecipe;
+      const quantity = parseNumber(row[recipe.quantityColumn]);
+      const unitValue = parseNumber(row[recipe.unitValueColumn]);
+      if (quantity === null || unitValue === null) {
+        cleanedValues[profile.name] = null;
+        stats.missingNumeric++;
+        issues.push({ type: "missing", column: profile.name, message: `Could not derive ${profile.label ?? profile.name} because ${quantity === null ? recipe.quantityColumn : recipe.unitValueColumn} is missing or invalid.` });
+      } else {
+        const adjustment = (column: string | undefined, direction: 1 | -1) => {
+          if (!column) return 0;
+          const parsed = parseNumber(row[column]);
+          if (parsed === null) return 0;
+          const header = normalise(column);
+          const percentageLabel = /percent|percentage|pct|%|rate|\bvat\b|\bgst\b/.test(header);
+          const amount = percentageLabel ? quantity * unitValue * (parsed / 100) : parsed;
+          return direction * amount;
+        };
+        const derived = quantity * unitValue + adjustment(recipe.discountColumn, -1) + adjustment(recipe.taxColumn, 1);
+        cleanedValues[profile.name] = derived;
+        changes.push({ column: profile.name, from: null, to: derived, reason: recipe.kind === "quantity_times_price" ? `Derived amount from ${recipe.quantityColumn} × ${recipe.unitValueColumn}` : `Derived amount from ${recipe.quantityColumn} × ${recipe.unitValueColumn}` });
+      }
+      continue;
+    }
     const raw = row[profile.name];
     if (missing(raw)) {
       cleanedValues[profile.name] = profile.kind === "category" ? UNKNOWN : null;
@@ -317,7 +394,7 @@ function analysisFromAggregates(input: { aggregates: AnalysisAggregate[]; profil
   const summary = primary
     ? `${metric.name} ${direction} ${Math.abs(changePercent).toFixed(1)}% from ${longReadablePeriod(previousPeriod)} to ${longReadablePeriod(currentPeriod)}. The largest contributor was ${primary.dimension}: ${primary.value}. We are ${confidence}% confident in this explanation. If it had stayed flat, ${metric.name.toLowerCase()} would have been about ${(primary.counterfactual).toLocaleString(undefined, { maximumFractionDigits: 0 })}.`
     : `${metric.name} ${direction} ${Math.abs(changePercent).toFixed(1)}% from ${longReadablePeriod(previousPeriod)} to ${longReadablePeriod(currentPeriod)}. No material categorical driver was identified.`;
-  return { metric: metric.name, metricLabel: metric.name, currencySymbol: /revenue|sales|amount|value|income|turnover|purchase|spend|price|cost|profit/i.test(metric.name) ? "$" : "", dateColumn: date.name, previousPeriod, currentPeriod, previousTotal, currentTotal, change, changePercent, excludedMetricRows: 0, trend: periods.slice(-8).map(period => ({ period, total: totals.get(period) ?? 0 })), causes, confidence, summary, totalRowsUsed: input.usableRows };
+  return { metric: metric.name, metricLabel: metric.label ?? metric.name, currencySymbol: /revenue|sales|amount|value|income|turnover|purchase|spend|price|cost|profit/i.test(metric.name) || Boolean(metric.metricRecipe) ? "$" : "", dateColumn: date.name, previousPeriod, currentPeriod, previousTotal, currentTotal, change, changePercent, excludedMetricRows: 0, trend: periods.slice(-8).map(period => ({ period, total: totals.get(period) ?? 0 })), causes, confidence, summary, totalRowsUsed: input.usableRows };
 }
 
 function fullCauseImpact(aggregates: AnalysisAggregate[], metricColumn: string, dimension: string, value: string, previousPeriod: string, currentPeriod: string) {
@@ -331,7 +408,8 @@ function fullCauseImpact(aggregates: AnalysisAggregate[], metricColumn: string, 
   return current - previous;
 }
 
-const logsFromStats = (stats: WorkerStats) => [
+const logsFromStats = (stats: WorkerStats, metric?: ColumnProfile) => [
+  ...(metric ? [{ key: "metric", title: "KPI selected", detail: metric.selectionReason ?? `Selected ${metric.label ?? metric.name} as the KPI.`, count: 1, severity: "success" as const }] : []),
   { key: "duplicates", title: "Exact duplicates excluded", detail: "Exact cleaned-row duplicates are retained for review but excluded from the default calculation.", count: stats.exactDuplicates, severity: stats.exactDuplicates ? "success" : "info" },
   { key: "possible", title: "Possible duplicates flagged", detail: "Rows sharing a company or customer, date, and KPI value are kept for your decision.", count: stats.possibleDuplicates, severity: stats.possibleDuplicates ? "warning" : "info" },
   { key: "fuzzy", title: "High-confidence category alias groups", detail: `${stats.fuzzyCategoryRows.toLocaleString()} individual category cells were reconciled across ${stats.fuzzyCategoryMerges.toLocaleString()} distinct alias group${stats.fuzzyCategoryMerges === 1 ? "" : "s"}.`, count: stats.fuzzyCategoryMerges, severity: stats.fuzzyCategoryMerges ? "success" : "info" },
@@ -574,7 +652,7 @@ async function recalculateFromStoredRows(importId: string, profiles: ColumnProfi
       // Preserve the baseline if removing outliers leaves too little period coverage for a valid comparison.
     }
   }
-  await updateKpiImport(importId, { status: "complete", sourceRowCount: rows.length, usableRowCount: baseline.usableRows, previewRowCount: rows.length, columnsJson: profiles, cleaningSummaryJson: logsFromStats(stats), analysisJson: analysis, workerCheckpointJson: { phase: "complete", processedRows: rows.length, recalculated: true }, completedAt: new Date() });
+  await updateKpiImport(importId, { status: "complete", sourceRowCount: rows.length, usableRowCount: baseline.usableRows, previewRowCount: rows.length, columnsJson: profiles, cleaningSummaryJson: logsFromStats(stats, metric), analysisJson: analysis, workerCheckpointJson: { phase: "complete", processedRows: rows.length, recalculated: true }, completedAt: new Date() });
   return analysis;
 }
 
@@ -706,6 +784,9 @@ async function runWorker() {
 
 export const __kpiImportWorkerTesting = {
   inferProfiles,
+  findMetric,
+  findDate,
+  parseDate,
   cleanRow,
   applyFuzzyCategoryReview,
   applyPossibleDuplicateReview,
