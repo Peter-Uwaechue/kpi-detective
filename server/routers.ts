@@ -18,6 +18,7 @@ const MAX_CV_BYTES = 6 * 1024 * 1024;
 const MAX_KPI_UPLOAD_BYTES = 5 * 1024 * 1024;
 const MAX_KPI_IMPORT_ROWS = 100_000;
 const KPI_UPLOAD_LIMIT_MESSAGE = "File exceeds 5MB — please upload a smaller file for now.";
+const ANALYST_LLM_TIMEOUT_MS = 8_000;
 const MAX_CV_BASE64_LENGTH = Math.ceil(MAX_CV_BYTES / 3) * 4;
 const cvMimeTypes = [
   "application/pdf",
@@ -32,6 +33,35 @@ const validCvFile = (buffer: Buffer, mimeType: (typeof cvMimeTypes)[number]) => 
 };
 
 const safeFileName = (name: string) => name.replace(/[^a-zA-Z0-9._-]/g, "-").replace(/-+/g, "-").slice(0, 180);
+
+type AnalystContext = {
+  metricLabel: string;
+  summary: string;
+  previousPeriod: string;
+  currentPeriod: string;
+  currencySymbol: string;
+  confidence: number;
+  causes: Array<{ dimension: string; value: string; impact: number; counterfactual: number; confidence: number }>;
+};
+
+const formatAnalystMetric = (value: number, symbol: string) => `${value < 0 ? "−" : value > 0 ? "+" : ""}${symbol}${Math.abs(value).toLocaleString(undefined, { maximumFractionDigits: 0 })}`;
+
+const fallbackAnalystAnswer = (question: string, context: AnalystContext) => {
+  const normalizedQuestion = question.toLowerCase();
+  const causes = [...context.causes].sort((left, right) => Math.abs(right.impact) - Math.abs(left.impact));
+  const matchedCause = causes.find(cause => normalizedQuestion.includes(cause.value.toLowerCase()));
+  const cause = matchedCause ?? causes[0];
+  if (cause && /what if|stayed flat|flat/.test(normalizedQuestion)) {
+    return `If ${cause.dimension}: ${cause.value} had stayed at its ${context.previousPeriod} level, ${context.metricLabel.toLowerCase()} would have been about ${formatAnalystMetric(cause.counterfactual, context.currencySymbol)} in ${context.currentPeriod}. This is based on its measured impact of ${formatAnalystMetric(cause.impact, context.currencySymbol)}.`;
+  }
+  if (matchedCause) {
+    return `The clearest displayed explanation is ${matchedCause.dimension}: ${matchedCause.value}, with an impact of ${formatAnalystMetric(matchedCause.impact, context.currencySymbol)} from ${context.previousPeriod} to ${context.currentPeriod}. This is an independent factor-level comparison, with ${matchedCause.confidence}% confidence.`;
+  }
+  if (/customer/.test(normalizedQuestion) && !causes.some(cause => /customer|client/i.test(cause.dimension))) {
+    return `The supplied analysis context does not include a customer-level driver. ${context.summary}`;
+  }
+  return context.summary;
+};
 
 export const appRouter = router({
     // if you need to use socket.io, read and register route in server/_core/index.ts, all api should start with '/api/' so that the gateway can route correctly
@@ -161,21 +191,24 @@ export const appRouter = router({
     })).mutation(async ({ input }) => {
       const factSheet = JSON.stringify(input.context);
       try {
-        const response = await invokeLLM({
-          model: "gpt-5-mini",
-          maxTokens: 650,
-          reasoning: { effort: "minimal" },
-          messages: [
-            {
-              role: "system",
-              content: "You are KPI Detective, a precise business analyst. Answer using only the supplied calculated KPI context; do not invent data, trends, customers, or causes. Write plain English for a non-technical business owner. State the relevant confidence score where possible, and keep the response concise (under 150 words). If the context cannot answer the question, say so directly and suggest a question it can answer.",
-            },
-            {
-              role: "user",
-              content: `Question: ${input.question}\n\nCalculated KPI context (aggregated only): ${factSheet}`,
-            },
-          ],
-        });
+        const response = await Promise.race([
+          invokeLLM({
+            model: "gpt-5-mini",
+            maxTokens: 650,
+            reasoning: { effort: "minimal" },
+            messages: [
+              {
+                role: "system",
+                content: "You are KPI Detective, a precise business analyst. Answer using only the supplied calculated KPI context; do not invent data, trends, customers, or causes. Write plain English for a non-technical business owner. State the relevant confidence score where possible, and keep the response concise (under 150 words). If the context cannot answer the question, say so directly and suggest a question it can answer.",
+              },
+              {
+                role: "user",
+                content: `Question: ${input.question}\n\nCalculated KPI context (aggregated only): ${factSheet}`,
+              },
+            ],
+          }),
+          new Promise<never>((_, reject) => setTimeout(() => reject(new Error("Analyst AI request timed out")), ANALYST_LLM_TIMEOUT_MS)),
+        ]);
         const content = response.choices[0]?.message.content;
         const answer = typeof content === "string" ? content.trim() : "";
         if (!answer) throw new Error("The analyst did not return an answer.");
@@ -183,7 +216,7 @@ export const appRouter = router({
       } catch (error) {
         console.warn("[KPI Detective] Analyst fallback used:", error);
         return {
-          answer: `${input.context.summary} For a deeper breakdown, ask about one of the displayed causes or use the local question suggestions.`,
+          answer: fallbackAnalystAnswer(input.question, input.context),
           generated: false,
         };
       }

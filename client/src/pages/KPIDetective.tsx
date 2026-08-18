@@ -54,7 +54,7 @@ import {
 import "./KPIDetective.css";
 
 type Stage = "upload" | "cleaning" | "review" | "results";
-type ChatMessage = { id: string; role: "assistant" | "user"; text: string; confidence?: number; generated?: boolean };
+type ChatMessage = { id: string; role: "assistant" | "user"; text: string; confidence?: number; generated?: boolean; failed?: boolean };
 type HistoryEntry = { id: string; at: string; metric: string; changePercent: number; summary: string; currentTotal?: number; previousTotal?: number; currentPeriod?: string; primaryCause?: string; primaryDimension?: string };
 type BenchmarkInsight = { average: number; current: number; deltaPercent: number };
 type PatternInsight = { cause: string; previousDate: string; previousChange: number } | null;
@@ -175,6 +175,7 @@ function RemoteDataTable({ importId, profiles, onChanged }: { importId: string; 
 
 function ChatPanel({ analysis, dataset }: { analysis: KpiAnalysis; dataset?: CleanedDataset | null }) {
   const [question, setQuestion] = useState("");
+  const [isSending, setIsSending] = useState(false);
   const [messages, setMessages] = useState<ChatMessage[]>([{ id: "welcome", role: "assistant", text: `I have investigated the ${analysis.metricLabel.toLowerCase()} change. Ask why a segment shifted, which customer contributed, or what the KPI would have been without a driver.`, confidence: analysis.confidence }]);
   const ask = trpc.kpi.ask.useMutation();
   const suggestions = [
@@ -184,31 +185,36 @@ function ChatPanel({ analysis, dataset }: { analysis: KpiAnalysis; dataset?: Cle
   ];
   const send = async (customQuestion?: string) => {
     const text = (customQuestion ?? question).trim();
-    if (!text || ask.isPending) return;
+    if (!text || isSending) return;
     const userMessage: ChatMessage = { id: `user-${Date.now()}`, role: "user", text };
     const local = dataset ? answerDataQuestion(text, dataset, analysis) : { answer: "I’m checking the backend analysis for that question…", confidence: analysis.confidence };
     const answerId = `assistant-${Date.now()}`;
+    const context = {
+      metricLabel: analysis.metricLabel,
+      summary: analysis.summary,
+      previousPeriod: analysis.previousPeriod,
+      currentPeriod: analysis.currentPeriod,
+      currencySymbol: analysis.currencySymbol,
+      confidence: analysis.confidence,
+      causes: analysis.causes.map(cause => ({ dimension: cause.dimension, value: cause.value, impact: cause.impact, counterfactual: cause.counterfactual, confidence: cause.confidence })),
+    };
+    const request = ask.mutateAsync({ question: text, context });
+    let timeoutId: number | undefined;
+    const timeout = new Promise<never>((_, reject) => { timeoutId = window.setTimeout(() => reject(new Error("Analyst response timed out")), 12_000); });
     setMessages(current => [...current, userMessage, { id: answerId, role: "assistant", text: local.answer, confidence: local.confidence }]);
     setQuestion("");
+    setIsSending(true);
     try {
-      const response = await ask.mutateAsync({
-        question: text,
-        context: {
-          metricLabel: analysis.metricLabel,
-          summary: analysis.summary,
-          previousPeriod: analysis.previousPeriod,
-          currentPeriod: analysis.currentPeriod,
-          currencySymbol: analysis.currencySymbol,
-          confidence: analysis.confidence,
-          causes: analysis.causes.map(cause => ({ dimension: cause.dimension, value: cause.value, impact: cause.impact, counterfactual: cause.counterfactual, confidence: cause.confidence })),
-        },
-      });
-      if (response.generated) setMessages(current => current.map(message => message.id === answerId ? { ...message, text: response.answer, generated: true } : message));
+      const response = await Promise.race([request, timeout]);
+      if (response.generated || !dataset) setMessages(current => current.map(message => message.id === answerId ? { ...message, text: response.answer, generated: response.generated } : message));
     } catch {
-      // The exact local calculation remains useful when the optional AI service is unavailable.
+      if (!dataset) setMessages(current => current.map(message => message.id === answerId ? { ...message, text: "Something went wrong, please try again.", confidence: undefined, failed: true } : message));
+    } finally {
+      if (timeoutId !== undefined) window.clearTimeout(timeoutId);
+      setIsSending(false);
     }
   };
-  return <section className="chat-panel"><div className="chat-heading"><div className="chat-orb"><Bot size={20} /></div><div><span className="eyebrow">Ask the analyst</span><h2>Keep investigating</h2></div><span className="context-chip"><LockKeyhole size={13} />Aggregated context only</span></div><div className="chat-messages">{messages.map(message => <div className={`chat-message ${message.role}`} key={message.id}><div className="message-avatar">{message.role === "assistant" ? <Sparkles size={15} /> : "You"}</div><div><p>{message.text}</p>{message.confidence !== undefined && <small>{message.generated ? "AI answer grounded in KPI context" : "Calculated confidence"}: {message.confidence}%</small>}</div></div>)}</div><div className="chat-suggestions">{suggestions.map(suggestion => <button key={suggestion} onClick={() => send(suggestion)}>{suggestion}<ChevronRight size={14} /></button>)}</div><form className="chat-input" onSubmit={event => { event.preventDefault(); void send(); }}><input value={question} onChange={event => setQuestion(event.target.value)} placeholder="Ask anything about your data" aria-label="Ask anything about your data" /><button type="submit" disabled={!question.trim() || ask.isPending}>{ask.isPending ? <Loader2 className="spin" size={17} /> : <Send size={17} />}</button></form></section>;
+  return <section className="chat-panel"><div className="chat-heading"><div className="chat-orb"><Bot size={20} /></div><div><span className="eyebrow">Ask the analyst</span><h2>Keep investigating</h2></div><span className="context-chip"><LockKeyhole size={13} />Aggregated context only</span></div><div className="chat-messages">{messages.map(message => <div className={`chat-message ${message.role} ${message.failed ? "is-error" : ""}`} key={message.id}><div className="message-avatar">{message.role === "assistant" ? <Sparkles size={15} /> : "You"}</div><div><p>{message.text}</p>{message.confidence !== undefined && <small>{message.generated ? "AI answer grounded in KPI context" : "Calculated confidence"}: {message.confidence}%</small>}</div></div>)}</div><div className="chat-suggestions">{suggestions.map(suggestion => <button key={suggestion} onClick={() => void send(suggestion)} disabled={isSending}>{suggestion}<ChevronRight size={14} /></button>)}</div><form className="chat-input" onSubmit={event => { event.preventDefault(); void send(); }}><input value={question} onChange={event => setQuestion(event.target.value)} placeholder="Ask anything about your data" aria-label="Ask anything about your data" disabled={isSending} /><button type="submit" disabled={!question.trim() || isSending}>{isSending ? <Loader2 className="spin" size={17} /> : <Send size={17} />}</button></form></section>;
 }
 
 export default function KPIDetective() {

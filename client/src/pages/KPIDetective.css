@@ -152,3 +152,7 @@
 .contribution-note { margin: -4px 0 8px; color: #6e7c84; font-size: 11px; line-height: 1.45; }
 .dark-mode .adjustment-badge { border-color: #80652c; color: #f3d594; background: #4a3b20; }
 .dark-mode .counterfactual-basis, .dark-mode .contribution-note { color: #aebcc2; }
+
+.chat-message.assistant.is-error > div:last-child { border-color: #e6aaa4; background: #fff1ef; color: #9c3e39; }
+.chat-message.assistant.is-error .message-avatar { background: #c95750; }
+.dark-mode .chat-message.assistant.is-error > div:last-child { border-color: #864942; background: #3a2422; color: #f1bbb6; }
