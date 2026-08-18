@@ -47,9 +47,9 @@ const rows: PeterImportRow[] = [
   { excluded: false, isOutlier: false, cleanedValues: { date: "2023-03-09", total_laid_off: 300, Country: "India", Product: "Fintech", Region: "South", Industry: "Finance", Stage: "Seed", Location: "Mumbai", Company: "East Co" } },
 ];
 
-const aggregates = (): PeterAggregate[] => {
+const aggregates = (source: PeterImportRow[] = rows): PeterAggregate[] => {
   const totals = new Map<string, PeterAggregate>();
-  rows.forEach(row => {
+  source.forEach(row => {
     const values = row.cleanedValues as Record<string, unknown>;
     const period = String(values.date).slice(0, 7);
     const metric = Number(values.total_laid_off);
@@ -65,13 +65,15 @@ const aggregates = (): PeterAggregate[] => {
   return Array.from(totals.values());
 };
 
-const ask = (question: string) => {
-  const aggregateRows = aggregates();
+const askWithRows = (question: string, source: PeterImportRow[]) => {
+  const aggregateRows = aggregates(source);
   let plan = planPeterQuestion(question, analysis, profiles, aggregateRows);
-  const rowEvidence = plan.needsRows ? rows : undefined;
+  const rowEvidence = plan.needsRows ? source : undefined;
   if (rowEvidence) plan = planPeterQuestion(question, analysis, profiles, aggregateRows, rowEvidence);
   return answerPeterQuery({ question, analysis, profiles, aggregates: aggregateRows, rows: rowEvidence, plan });
 };
+
+const ask = (question: string) => askWithRows(question, rows);
 
 describe("Ask Peter full-cleaned-data query service", () => {
   it("answers the other-country question with a genuinely different country and explicit exclusion evidence", () => {
@@ -160,6 +162,34 @@ describe("Ask Peter full-cleaned-data query service", () => {
     expect(result.evidence.items[0]?.value).toBe(expectedValue);
     expect(result.answer).toContain("The top 1");
     expect(result.answer).toContain(`only within ${dimension}`);
+  });
+
+  it("ranks singular company superlatives by raw current-period total and returns tied leaders", () => {
+    const productionShapedRows: PeterImportRow[] = [
+      { excluded: false, isOutlier: false, cleanedValues: { date: "2023-02-01", total_laid_off: 0, Company: "Atlassian", Country: "Australia" } },
+      { excluded: false, isOutlier: false, cleanedValues: { date: "2023-02-02", total_laid_off: 0, Company: "Thoughtworks", Country: "United States" } },
+      { excluded: false, isOutlier: false, cleanedValues: { date: "2023-02-03", total_laid_off: 0, Company: "Loft", Country: "Brazil" } },
+      { excluded: false, isOutlier: false, cleanedValues: { date: "2023-03-01", total_laid_off: 500, Company: "Atlassian", Country: "Australia" } },
+      { excluded: false, isOutlier: false, cleanedValues: { date: "2023-03-02", total_laid_off: 500, Company: "Thoughtworks", Country: "United States" } },
+      { excluded: false, isOutlier: false, cleanedValues: { date: "2023-03-03", total_laid_off: 340, Company: "Loft", Country: "Brazil" } },
+    ];
+    const result = askWithRows("What was the biggest single company layoff in this data?", productionShapedRows);
+
+    expect(result.plan.intent).toBe("top_n");
+    expect(result.plan.rankBy).toBe("current");
+    expect(result.evidence.items.map(item => item.value)).toEqual(["Atlassian", "Thoughtworks"]);
+    expect(result.evidence.items.every(item => item.current === 500)).toBe(true);
+    expect(result.evidence.items.map(item => item.value)).not.toContain("Loft");
+    expect(result.answer).toContain("highest-ranked companies are tied");
+    expect(result.answer).toContain("500 in March 2023");
+  });
+
+  it("uses absolute change only when the question explicitly asks about movement", () => {
+    const result = ask("Which company had the biggest change?");
+
+    expect(result.plan.intent).toBe("top_n");
+    expect(result.plan.rankBy).toBe("absolute_change");
+    expect(result.evidence.items[0]?.value).toBe("Atlas Labs");
   });
 
   it("keeps the suggested why and counterfactual question behavior on the new service", () => {

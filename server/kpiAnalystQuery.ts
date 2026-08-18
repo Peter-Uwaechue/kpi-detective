@@ -239,7 +239,8 @@ export const planPeterQuestion = (question: string, analysis: KpiAnalysis, profi
   const companyFactor = findMentionedFactor(question, availableFactors.filter(factor => /company|customer|client|employer|organisation|organization/i.test(factor.dimension)));
   const asksWhy = /\bwhy\b|\bcause\b|\bexplain\b|\bchanged?\b|\bdrop\b|\bdecline\b|\bincrease\b/.test(text);
   const exclusions = asksOther && entity ? [entity] : [];
-  const rankBy: PeterQueryPlan["rankBy"] = /\bfactor\b|\bimpact\b|\baffected\b|\bchange\b/.test(text) && !/\btop\s+\d+\s+(?:countries|country|products|product|companies|company|regions|region)\b/.test(text) ? "absolute_change" : "current";
+  const asksMovement = /\bfactor\b|\bimpact\b|\baffected\b|\bchange\b|\bmoved?\b|\bmovement\b/.test(text);
+  const rankBy: PeterQueryPlan["rankBy"] = asksMovement ? "absolute_change" : "current";
   if (asksDateDetail && !entity && !rows) return { intent: "date_detail", dimension: null, entity: null, exclusions: [], limit: 3, rankBy: "absolute_change", needsRows: true, reason: "resolve_date_scope_in_rows" };
   if (asksDateDetail && !entity) return { intent: "unsupported", dimension: null, entity: null, exclusions: [], limit: 0, rankBy: "current", needsRows: false, reason: "date_scope_not_found" };
   if (asksDateDetail) return { intent: "date_detail", dimension: mentionedFactor?.dimension ?? dimension, entity, exclusions: [], limit: 3, rankBy: "absolute_change", needsRows: true, reason: "date_detail_request" };
@@ -268,7 +269,7 @@ export const planPeterQuestion = (question: string, analysis: KpiAnalysis, profi
 };
 
 export const resolvePeterPlanWithAi = async (question: string, analysis: KpiAnalysis, profiles: ColumnProfile[], aggregates: PeterAggregate[], fallback: PeterQueryPlan): Promise<PeterQueryPlan> => {
-  if (["overall_explain", "aggregate", "single_event"].includes(fallback.intent)) return fallback;
+  if (["overall_explain", "aggregate", "single_event", "top_n"].includes(fallback.intent)) return fallback;
   const dimensions = eligibleDimensions(profiles).filter(dimension => dimension !== analysis.metric && dimension !== analysis.dateColumn);
   const factors = buildFactorsFromAggregates(aggregates, profiles, analysis);
   if (!dimensions.length) return fallback;
@@ -447,11 +448,15 @@ export const answerPeterQuery = (input: { question: string; analysis: KpiAnalysi
   }
   if (plan.intent === "top_n") {
     if (!plan.dimension) return unsupported("Please name a dimension, such as countries, products, regions, or companies.");
-    const items = factors.filter(factor => factor.dimension === plan.dimension && !plan.exclusions.some(exclusion => normalise(exclusion) === normalise(factor.value))).sort(plan.rankBy === "current" ? byCurrent : byAbsoluteChange).slice(0, plan.limit);
+    const ranking = factors.filter(factor => factor.dimension === plan.dimension && !plan.exclusions.some(exclusion => normalise(exclusion) === normalise(factor.value))).sort(plan.rankBy === "current" ? byCurrent : byAbsoluteChange);
+    const cutoff = ranking[plan.limit - 1];
+    const items = cutoff && plan.limit === 1 ? ranking.filter(item => (plan.rankBy === "current" ? item.current : Math.abs(item.impact)) === (plan.rankBy === "current" ? cutoff.current : Math.abs(cutoff.impact))) : ranking.slice(0, plan.limit);
     const invalid = validateResult(plan, items);
     if (invalid || !items.length) return unsupported(invalid ?? `No measurable ${plan.dimension} values were found in the comparison periods.`);
     const listed = items.map((item, index) => `${index + 1}. ${item.value} — ${plainMetric(plan.rankBy === "current" ? item.current : Math.abs(item.impact), analysis.currencySymbol)}${plan.rankBy === "current" ? ` in ${current}` : " absolute change"} (from ${plainMetric(item.previous, analysis.currencySymbol)}; ${signedMetric(item.impact, analysis.currencySymbol)} change)`).join("; ");
-    return { answer: `The top ${items.length} ${pluralise(plan.dimension.toLowerCase(), items.length)} by ${plan.rankBy === "current" ? `current-period ${analysis.metricLabel.toLowerCase()}` : "absolute change"} are: ${listed}. This ranking is calculated only within ${plan.dimension}, not across unrelated dimensions.`, confidence: Math.round(items.reduce((total, item) => total + item.confidence, 0) / items.length), plan, evidence: { dimension: plan.dimension, items, exclusionApplied: plan.exclusions, source } };
+    const tiedFirst = plan.limit === 1 && items.length > 1;
+    const heading = tiedFirst ? `The highest-ranked ${pluralise(plan.dimension.toLowerCase(), items.length)} are tied` : `The top ${items.length} ${pluralise(plan.dimension.toLowerCase(), items.length)}`;
+    return { answer: `${heading} by ${plan.rankBy === "current" ? `current-period ${analysis.metricLabel.toLowerCase()}` : "absolute change"}: ${listed}. This ranking is calculated only within ${plan.dimension}, not across unrelated dimensions.`, confidence: Math.round(items.reduce((total, item) => total + item.confidence, 0) / items.length), plan, evidence: { dimension: plan.dimension, items, exclusionApplied: plan.exclusions, source } };
   }
   if (plan.intent === "factor_rank") {
     const items = factors.sort(byAbsoluteChange);
