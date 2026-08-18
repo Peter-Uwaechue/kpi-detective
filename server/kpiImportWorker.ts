@@ -39,6 +39,12 @@ const CURRENCY_CODE_PATTERN = /\b(NGN|USD|EUR|GBP|CAD|AUD|ZAR|KES|GHS|AED|INR)\b
 
 type RawRecord = Record<string, unknown>;
 type ColumnKind = "date" | "number" | "category" | "identifier" | "unknown";
+type DatePreference = "day-first" | "month-first" | "ambiguous" | "contextual";
+type DateContext = {
+  startPeriod?: string;
+  endPeriod?: string;
+  fallbackPreference: "day-first" | "month-first";
+};
 type MetricRecipe = {
   kind: "quantity_times_price" | "quantity_times_cost";
   quantityColumn: string;
@@ -50,7 +56,8 @@ type ColumnProfile = {
   name: string;
   kind: ColumnKind;
   confidence: number;
-  datePreference?: "day-first" | "month-first" | "ambiguous";
+  datePreference?: DatePreference;
+  dateContext?: DateContext;
   isSelectedMetric?: boolean;
   label?: string;
   selectionReason?: string;
@@ -118,7 +125,12 @@ const toIso = (year: number, month: number, day: number) => {
   return candidate.getUTCFullYear() === year && candidate.getUTCMonth() === month - 1 && candidate.getUTCDate() === day ? candidate.toISOString().slice(0, 10) : null;
 };
 
-const parseDate = (value: unknown, preference: "day-first" | "month-first" | "ambiguous" = "ambiguous") => {
+const withinObservedPeriodWindow = (value: string, context?: DateContext) => {
+  const period = value.slice(0, 7);
+  return (!context?.startPeriod || period >= context.startPeriod) && (!context?.endPeriod || period <= context.endPeriod);
+};
+
+const parseDate = (value: unknown, preference: DatePreference = "ambiguous", context?: DateContext) => {
   if (value instanceof Date && !Number.isNaN(value.getTime())) return value.toISOString().slice(0, 10);
   const raw = text(value);
   if (!raw || missing(raw)) return null;
@@ -132,8 +144,17 @@ const parseDate = (value: unknown, preference: "day-first" | "month-first" | "am
     if (year < 100) year += year >= 70 ? 1900 : 2000;
     if (first > 12) return toIso(year, second, first);
     if (second > 12) return toIso(year, first, second);
-    if (preference === "day-first") return toIso(year, second, first);
-    if (preference === "month-first") return toIso(year, first, second);
+    const dayFirst = toIso(year, second, first);
+    const monthFirst = toIso(year, first, second);
+    if (dayFirst && dayFirst === monthFirst) return dayFirst;
+    if (preference === "day-first") return dayFirst;
+    if (preference === "month-first") return monthFirst;
+    if (preference === "contextual") {
+      const contextualCandidates = [dayFirst, monthFirst].filter((candidate): candidate is string => candidate !== null && withinObservedPeriodWindow(candidate, context));
+      if (contextualCandidates.length === 1) return contextualCandidates[0];
+      if (contextualCandidates.length === 2) return context?.fallbackPreference === "month-first" ? monthFirst : dayFirst;
+      return context?.fallbackPreference === "month-first" ? monthFirst : dayFirst;
+    }
     return null;
   }
   const namedDayFirst = raw.match(/^(\d{1,2})\s*[- ]\s*([A-Za-z]{3,9})\s*[-, ]\s*(\d{2,4})$/);
@@ -148,98 +169,74 @@ const parseDate = (value: unknown, preference: "day-first" | "month-first" | "am
   return Number.isNaN(parsed) ? null : new Date(parsed).toISOString().slice(0, 10);
 };
 
-const inferDatePreference = (values: unknown[]): "day-first" | "month-first" | "ambiguous" => {
+const inferDateProfile = (values: unknown[]): { preference: DatePreference; context?: DateContext } => {
   let dayFirstEvidence = 0;
   let monthFirstEvidence = 0;
-  const knownMonths = new Set<string>();
+  const knownDates = new Set<string>();
   const dayFirstMonths = new Set<string>();
   const monthFirstMonths = new Set<string>();
 
+  const addKnownDate = (value: string | null) => { if (value) knownDates.add(value); };
   values.forEach(value => {
     const raw = text(value);
     if (!raw) return;
     const iso = raw.match(/^(\d{4})[-/.](\d{1,2})[-/.](\d{1,2})/);
-    if (iso) {
-      const parsed = toIso(Number(iso[1]), Number(iso[2]), Number(iso[3]));
-      if (parsed) knownMonths.add(parsed.slice(0, 7));
-      return;
-    }
+    if (iso) { addKnownDate(toIso(Number(iso[1]), Number(iso[2]), Number(iso[3]))); return; }
 
     const namedDayFirst = raw.match(/^(\d{1,2})\s*[- ]\s*([A-Za-z]{3,9})\s*[-, ]\s*(\d{2,4})/);
-    if (namedDayFirst) {
-      dayFirstEvidence++;
-      const parsed = parseDate(raw);
-      if (parsed) knownMonths.add(parsed.slice(0, 7));
-      return;
-    }
+    if (namedDayFirst) { dayFirstEvidence++; addKnownDate(parseDate(raw)); return; }
     const namedMonthFirst = raw.match(/^([A-Za-z]{3,9})\s+(\d{1,2}),?\s+(\d{2,4})/);
-    if (namedMonthFirst) {
-      monthFirstEvidence++;
-      const parsed = parseDate(raw);
-      if (parsed) knownMonths.add(parsed.slice(0, 7));
-      return;
-    }
+    if (namedMonthFirst) { monthFirstEvidence++; addKnownDate(parseDate(raw)); return; }
 
     const parts = raw.match(/^(\d{1,2})[/-](\d{1,2})[/-](\d{2,4})/);
-    if (parts) {
-      const first = Number(parts[1]);
-      const second = Number(parts[2]);
-      let year = Number(parts[3]);
-      if (year < 100) year += year >= 70 ? 1900 : 2000;
-      if (first > 12 && second <= 12) {
-        dayFirstEvidence++;
-        const parsed = toIso(year, second, first);
-        if (parsed) knownMonths.add(parsed.slice(0, 7));
-        return;
-      }
-      if (second > 12 && first <= 12) {
-        monthFirstEvidence++;
-        const parsed = toIso(year, first, second);
-        if (parsed) knownMonths.add(parsed.slice(0, 7));
-        return;
-      }
-      const dayFirst = toIso(year, second, first);
-      const monthFirst = toIso(year, first, second);
-      if (dayFirst) dayFirstMonths.add(dayFirst.slice(0, 7));
-      if (monthFirst) monthFirstMonths.add(monthFirst.slice(0, 7));
-      return;
-    }
-
-    // Textual month names are explicit dates but do not reveal whether a
-    // separate numeric slash date uses day-first or month-first ordering.
-    const parsed = parseDate(raw);
-    if (parsed) knownMonths.add(parsed.slice(0, 7));
+    if (!parts) { addKnownDate(parseDate(raw)); return; }
+    const first = Number(parts[1]);
+    const second = Number(parts[2]);
+    let year = Number(parts[3]);
+    if (year < 100) year += year >= 70 ? 1900 : 2000;
+    if (first > 12 && second <= 12) { dayFirstEvidence++; addKnownDate(toIso(year, second, first)); return; }
+    if (second > 12 && first <= 12) { monthFirstEvidence++; addKnownDate(toIso(year, first, second)); return; }
+    const dayFirst = toIso(year, second, first);
+    const monthFirst = toIso(year, first, second);
+    if (dayFirst) dayFirstMonths.add(dayFirst.slice(0, 7));
+    if (monthFirst) monthFirstMonths.add(monthFirst.slice(0, 7));
+    if (dayFirst && dayFirst === monthFirst) addKnownDate(dayFirst);
   });
 
-  if (dayFirstEvidence && !monthFirstEvidence) return "day-first";
-  if (monthFirstEvidence && !dayFirstEvidence) return "month-first";
+  if (dayFirstEvidence && !monthFirstEvidence) return { preference: "day-first" };
+  if (monthFirstEvidence && !dayFirstEvidence) return { preference: "month-first" };
 
-  // With competing textual formats, as with only ambiguous numeric slash
-  // values, prefer the interpretation that
-  // best fits the observed ISO/textual month range. This keeps a single
-  // April–June invoice series from being scattered across March, September,
-  // and October merely because dates are <= 12.
+  let fallbackPreference: "day-first" | "month-first" = dayFirstEvidence >= monthFirstEvidence ? "day-first" : "month-first";
   if (dayFirstMonths.size && monthFirstMonths.size) {
+    const knownMonths = new Set(Array.from(knownDates, value => value.slice(0, 7)));
     const totalMonths = (candidateMonths: Set<string>) => new Set(Array.from(knownMonths).concat(Array.from(candidateMonths))).size;
     const dayFirstTotal = totalMonths(dayFirstMonths);
     const monthFirstTotal = totalMonths(monthFirstMonths);
-    if (dayFirstTotal < monthFirstTotal) return "day-first";
-    if (monthFirstTotal < dayFirstTotal) return "month-first";
+    if (monthFirstTotal < dayFirstTotal) fallbackPreference = "month-first";
+    if (dayFirstTotal < monthFirstTotal) fallbackPreference = "day-first";
   }
-  return "ambiguous";
+  const orderedKnownDates = Array.from(knownDates).sort();
+  return {
+    preference: "contextual",
+    context: {
+      startPeriod: orderedKnownDates[0]?.slice(0, 7),
+      endPeriod: orderedKnownDates.at(-1)?.slice(0, 7),
+      fallbackPreference,
+    },
+  };
 };
 
 const inferBaseProfiles = (headers: string[], samples: RawRecord[]): ColumnProfile[] => headers.map(name => {
   const values = samples.map(row => row[name]).filter(value => !missing(value));
   if (!values.length) return { name, kind: "unknown", confidence: 0 };
-  const preference = inferDatePreference(values);
+  const dateProfile = inferDateProfile(values);
   const numericRate = values.filter(value => parseNumber(value) !== null).length / values.length;
-  const dateRate = values.filter(value => parseDate(value, preference) !== null).length / values.length;
+  const dateRate = values.filter(value => parseDate(value, dateProfile.preference, dateProfile.context) !== null).length / values.length;
   const distinctRate = new Set(values.map(text)).size / values.length;
   const dateHint = headerScore(name, DATE_TERMS);
   const numericHint = headerScore(name, REVENUE_TERMS);
   const explicitIdentifier = IDENTIFIER_PATTERN.test(name);
-  if (!explicitIdentifier && dateRate >= PROFILE_MIN_VALID_RATE && (dateHint > 0 || numericRate < 0.98)) return { name, kind: "date", confidence: Math.round(Math.min(99, dateRate * 88 + dateHint * 5)), datePreference: preference };
+  if (!explicitIdentifier && dateRate >= PROFILE_MIN_VALID_RATE && (dateHint > 0 || numericRate < 0.98)) return { name, kind: "date", confidence: Math.round(Math.min(99, dateRate * 88 + dateHint * 5)), datePreference: dateProfile.preference, dateContext: dateProfile.context };
   const quantityHint = headerScore(name, QUANTITY_TERMS);
   if (explicitIdentifier || (distinctRate > 0.92 && values.length > 7 && /\d/.test(values.map(text).join("")) && numericHint === 0 && quantityHint === 0)) return { name, kind: "identifier", confidence: 82 };
   const categoryHint = headerScore(name, CATEGORY_TERMS);
@@ -308,7 +305,7 @@ const findMetric = (profiles: ColumnProfile[]) => profiles.find(profile => profi
 const findDate = (profiles: ColumnProfile[]) => profiles.filter(profile => profile.kind === "date").sort((a, b) => headerScore(b.name, DATE_TERMS) - headerScore(a.name, DATE_TERMS) || b.confidence - a.confidence)[0];
 const profilingDetail = (profiles: ColumnProfile[]) => profiles.map(profile => {
   const selected = profile.isSelectedMetric ? "; selected KPI" : "";
-  const preference = profile.kind === "date" && profile.datePreference ? `; ${profile.datePreference}` : "";
+  const preference = profile.kind === "date" && profile.datePreference ? `; ${profile.datePreference}${profile.dateContext?.startPeriod && profile.dateContext?.endPeriod ? `; observed ${profile.dateContext.startPeriod} to ${profile.dateContext.endPeriod}` : ""}` : "";
   const displayName = profile.label && profile.label !== profile.name ? `${profile.label} (${profile.name})` : profile.name;
   return `${displayName}: ${profile.kind} (${profile.confidence}%${selected}${preference})`;
 }).join(" · ");
@@ -358,7 +355,7 @@ function cleanRow(row: RawRecord, profiles: ColumnProfile[], stats: WorkerStats)
       continue;
     }
     if (profile.kind === "date") {
-      const parsed = parseDate(raw, profile.datePreference);
+      const parsed = parseDate(raw, profile.datePreference, profile.dateContext);
       cleanedValues[profile.name] = parsed ?? raw;
       if (parsed && parsed !== raw) { stats.dateChanges++; changes.push({ column: profile.name, from: raw, to: parsed, reason: "Standardised date" }); }
       if (!parsed) issues.push({ type: "ambiguous-date", column: profile.name, message: "Could not standardise date" });
@@ -807,7 +804,7 @@ export async function applyImportReviewAction(input: { importId: string; rowNumb
       row.changes.splice(index, 1);
     } else {
       const rawValue = input.value ?? "";
-      const value = profile.kind === "number" ? parseNumber(rawValue) : profile.kind === "date" ? parseDate(rawValue, profile.datePreference) : profile.kind === "category" ? (text(rawValue).replace(/\s+/g, " ").trim() || UNKNOWN) : rawValue;
+      const value = profile.kind === "number" ? parseNumber(rawValue) : profile.kind === "date" ? parseDate(rawValue, profile.datePreference, profile.dateContext) : profile.kind === "category" ? (text(rawValue).replace(/\s+/g, " ").trim() || UNKNOWN) : rawValue;
       if (profile.kind === "number" && value === null && !missing(rawValue)) throw new Error("Enter a valid numeric value for this column.");
       if (profile.kind === "date" && value === null && !missing(rawValue)) throw new Error("Enter a valid date value for this column.");
       const previous = row.cleanedValues[input.column];

@@ -211,7 +211,7 @@ it("explains rejected profiling decisions with the selected and classified colum
 
 it("profiles a mixed InvoiceDate column as a date when ISO and textual dates anchor ambiguous slash timestamps", () => {
   const dates = [
-    "2026-05-29 09:50:00",
+    "2026-04-30 09:50:00",
     "28-May-2026",
     "Jun 08, 2026",
     "2026-05-30T12:00:00",
@@ -238,9 +238,9 @@ it("profiles a mixed InvoiceDate column as a date when ISO and textual dates anc
   const workerStats = stats();
   const cleaned = rows.map(row => __kpiImportWorkerTesting.cleanRow(row, profiles, workerStats));
 
-  expect(date).toMatchObject({ name: "InvoiceDate", kind: "date", datePreference: "month-first" });
+  expect(date).toMatchObject({ name: "InvoiceDate", kind: "date", datePreference: "contextual", dateContext: { startPeriod: "2026-04", endPeriod: "2026-06", fallbackPreference: "month-first" } });
   expect(cleaned.map(row => row.cleanedValues.InvoiceDate)).toEqual([
-    "2026-05-29",
+    "2026-04-30",
     "2026-05-28",
     "2026-06-08",
     "2026-05-30",
@@ -250,7 +250,40 @@ it("profiles a mixed InvoiceDate column as a date when ISO and textual dates anc
     "2026-04-03",
     "2026-04-09",
     "2026-05-10",
-    "2026-05-29",
+    "2026-04-30",
   ]);
   expect(__kpiImportWorkerTesting.findMetric(profiles)).toMatchObject({ name: "__derived_amount__", isSelectedMetric: true });
+});
+
+
+it("handles a different day-first operational window with numeric date-times, ISO dates, and text dates", () => {
+  const rows: RawRecord[] = [
+    { InvoiceNo: "EU-1", Quantity: "1", UnitPrice: "10", InvoiceDate: "2027-09-17 09:00:00" },
+    { InvoiceNo: "EU-2", Quantity: "1", UnitPrice: "10", InvoiceDate: "18-Sep-2027 10:30" },
+    { InvoiceNo: "EU-3", Quantity: "1", UnitPrice: "10", InvoiceDate: "04/09/2027 14:20" },
+    { InvoiceNo: "EU-4", Quantity: "1", UnitPrice: "10", InvoiceDate: "09/10/2027" },
+    { InvoiceNo: "EU-5", Quantity: "1", UnitPrice: "10", InvoiceDate: "24/10/2027 08:10" },
+  ];
+  const profiles = __kpiImportWorkerTesting.inferProfiles(Object.keys(rows[0]!), rows);
+  const date = __kpiImportWorkerTesting.findDate(profiles);
+  const cleaned = rows.map(row => __kpiImportWorkerTesting.cleanRow(row, profiles, stats()));
+
+  expect(date).toMatchObject({ name: "InvoiceDate", kind: "date", datePreference: "day-first" });
+  expect(cleaned.map(row => row.cleanedValues.InvoiceDate)).toEqual(["2027-09-17", "2027-09-18", "2027-09-04", "2027-10-09", "2027-10-24"]);
+});
+
+it("handles a different month-first operational window with numeric date-times, ISO dates, and text dates", () => {
+  const rows: RawRecord[] = [
+    { InvoiceNo: "US-1", Quantity: "1", UnitPrice: "10", InvoiceDate: "2025-01-31T09:00:00" },
+    { InvoiceNo: "US-2", Quantity: "1", UnitPrice: "10", InvoiceDate: "January 30, 2025 10:30" },
+    { InvoiceNo: "US-3", Quantity: "1", UnitPrice: "10", InvoiceDate: "01/31/2025 14:20" },
+    { InvoiceNo: "US-4", Quantity: "1", UnitPrice: "10", InvoiceDate: "02/01/2025" },
+    { InvoiceNo: "US-5", Quantity: "1", UnitPrice: "10", InvoiceDate: "02/14/2025 08:10" },
+  ];
+  const profiles = __kpiImportWorkerTesting.inferProfiles(Object.keys(rows[0]!), rows);
+  const date = __kpiImportWorkerTesting.findDate(profiles);
+  const cleaned = rows.map(row => __kpiImportWorkerTesting.cleanRow(row, profiles, stats()));
+
+  expect(date).toMatchObject({ name: "InvoiceDate", kind: "date", datePreference: "month-first" });
+  expect(cleaned.map(row => row.cleanedValues.InvoiceDate)).toEqual(["2025-01-31", "2025-01-30", "2025-01-31", "2025-02-01", "2025-02-14"]);
 });
