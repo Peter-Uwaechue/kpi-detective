@@ -267,11 +267,14 @@ export const planPeterQuestion = (question: string, analysis: KpiAnalysis, profi
   if (asksCompanyOrRows && entity && asksWhy && mentionedFactor?.dimension === dimension) return { intent: "explain", dimension, entity, exclusions, limit: 3, rankBy: "absolute_change", needsRows: true, reason: "named_company_explanation" };
   if (asksCompanyOrRows) return { intent: "drilldown", dimension, entity, exclusions, scope: mentionedFactor && mentionedFactor.dimension !== dimension ? { dimension: mentionedFactor.dimension, value: mentionedFactor.value } : undefined, limit: rankLimit(question), rankBy: "absolute_change", needsRows: true, reason: "company_or_row_drilldown" };
   if (asksWhy && !entity && !dimension) return { intent: "overall_explain", dimension: null, entity: null, exclusions: [], limit: 3, rankBy: "absolute_change", needsRows: Boolean(analysis.outlierSensitivity?.explanationChanged), reason: "overall_kpi_explanation" };
-  if (asksWhy || entity || dimension) return { intent: "explain", dimension, entity, exclusions, limit: 3, rankBy: "absolute_change", needsRows: true, reason: "entity_or_explanation_request" };
+  if (asksWhy || entity || dimension) return { intent: "explain", dimension: mentionedFactor?.dimension ?? dimension, entity, exclusions, limit: 3, rankBy: "absolute_change", needsRows: true, reason: "entity_or_explanation_request" };
   return { intent: "unsupported", dimension: null, entity: null, exclusions: [], limit: 0, rankBy: "current", needsRows: false, reason: "no_safe_query_interpretation" };
 };
 
 export const resolvePeterPlanWithAi = async (question: string, analysis: KpiAnalysis, profiles: ColumnProfile[], aggregates: PeterAggregate[], fallback: PeterQueryPlan): Promise<PeterQueryPlan> => {
+  // A deterministic exact entity match is stronger evidence than a model interpretation.
+  // Preserve it across every named-driver query so an optional planner cannot substitute a different card.
+  if (fallback.entity) return fallback;
   if (["overall_explain", "aggregate", "single_event", "top_n"].includes(fallback.intent)) return fallback;
   const dimensions = eligibleDimensions(profiles).filter(dimension => dimension !== analysis.metric && dimension !== analysis.dateColumn);
   const factors = buildFactorsFromAggregates(aggregates, profiles, analysis);
@@ -402,6 +405,13 @@ export const answerPeterQuery = (input: { question: string; analysis: KpiAnalysi
   const askForClarification = (reason: string): PeterAnswer => ({ answer: clarification(reason), confidence: analysis.confidence, plan, evidence: { dimension: null, items: [], exclusionApplied: [], source } });
   const topicMismatch = plan.intent === "unsupported" ? (plan.reason === "no_safe_query_interpretation" || plan.reason === "ai_could_not_safely_interpret" ? "I could not confidently map this wording to a distinct data query." : null) : planMatchesQuestionTopic(question, plan);
   if (topicMismatch) return askForClarification(topicMismatch);
+  const namedFactor = findMentionedFactor(question, factors);
+  const requiresExactNamedFactor = ["explain", "counterfactual", "overlap", "drilldown"].includes(plan.intent);
+  const boundDimension = plan.scope?.dimension ?? plan.dimension;
+  const boundEntity = plan.scope?.value ?? plan.entity;
+  if (namedFactor && requiresExactNamedFactor && (
+    !boundEntity || normalise(boundEntity) !== normalise(namedFactor.value) || boundDimension !== namedFactor.dimension
+  )) return unsupported(`I identified ${namedFactor.dimension}: ${namedFactor.value} in the question, but could not safely bind the answer to that exact driver. I will not substitute a different segment.`);
   if (plan.intent === "unsupported") {
     if (plan.reason === "named_company_not_found") return unsupported("I could not find a matching company, customer, client, or employer in the cleaned data.");
     if (plan.reason === "ai_entity_not_present") return unsupported("The named entity was not present in the cleaned data, so I will not substitute a different segment.");
