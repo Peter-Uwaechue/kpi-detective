@@ -207,3 +207,50 @@ it("explains rejected profiling decisions with the selected and classified colum
   expect(detail).toContain("Derived Amount (__derived_amount__): number");
   expect(detail).toContain("selected KPI");
 });
+
+
+it("profiles a mixed InvoiceDate column as a date when ISO and textual dates anchor ambiguous slash timestamps", () => {
+  const dates = [
+    "2026-05-29 09:50:00",
+    "28-May-2026",
+    "Jun 08, 2026",
+    "2026-05-30T12:00:00",
+    "29-May-2026 15:42",
+    "Jun 09, 2026 15:42",
+    "2026-06-01",
+    "04/03/2026 15:42",
+    "04/09/2026",
+    "05/10/2026 15:42",
+  ];
+  const rows: RawRecord[] = dates.map((InvoiceDate, index) => ({
+    InvoiceNo: `INV-${1000 + index}`,
+    Quantity: String(index + 1),
+    UnitPrice: `£${index + 1}.50`,
+    InvoiceDate,
+    Country: "United Kingdom",
+  }));
+  // Repeated invoice days keep the date column below the high-cardinality
+  // identifier threshold, reproducing the original 70% category outcome.
+  rows.push({ ...rows[0]!, InvoiceNo: "INV-1010" });
+
+  const profiles = __kpiImportWorkerTesting.inferProfiles(Object.keys(rows[0]!), rows);
+  const date = __kpiImportWorkerTesting.findDate(profiles);
+  const workerStats = stats();
+  const cleaned = rows.map(row => __kpiImportWorkerTesting.cleanRow(row, profiles, workerStats));
+
+  expect(date).toMatchObject({ name: "InvoiceDate", kind: "date", datePreference: "month-first" });
+  expect(cleaned.map(row => row.cleanedValues.InvoiceDate)).toEqual([
+    "2026-05-29",
+    "2026-05-28",
+    "2026-06-08",
+    "2026-05-30",
+    "2026-05-29",
+    "2026-06-09",
+    "2026-06-01",
+    "2026-04-03",
+    "2026-04-09",
+    "2026-05-10",
+    "2026-05-29",
+  ]);
+  expect(__kpiImportWorkerTesting.findMetric(profiles)).toMatchObject({ name: "__derived_amount__", isSelectedMetric: true });
+});

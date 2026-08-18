@@ -151,34 +151,80 @@ const parseDate = (value: unknown, preference: "day-first" | "month-first" | "am
 const inferDatePreference = (values: unknown[]): "day-first" | "month-first" | "ambiguous" => {
   let dayFirstEvidence = 0;
   let monthFirstEvidence = 0;
+  const knownMonths = new Set<string>();
   const dayFirstMonths = new Set<string>();
   const monthFirstMonths = new Set<string>();
+
   values.forEach(value => {
     const raw = text(value);
-    if (/^\d{1,2}\s*[- ]\s*[A-Za-z]{3,9}\s*[-, ]\s*\d{2,4}/.test(raw)) { dayFirstEvidence++; return; }
-    if (/^[A-Za-z]{3,9}\s+\d{1,2},?\s+\d{2,4}/.test(raw)) { monthFirstEvidence++; return; }
+    if (!raw) return;
+    const iso = raw.match(/^(\d{4})[-/.](\d{1,2})[-/.](\d{1,2})/);
+    if (iso) {
+      const parsed = toIso(Number(iso[1]), Number(iso[2]), Number(iso[3]));
+      if (parsed) knownMonths.add(parsed.slice(0, 7));
+      return;
+    }
+
+    const namedDayFirst = raw.match(/^(\d{1,2})\s*[- ]\s*([A-Za-z]{3,9})\s*[-, ]\s*(\d{2,4})/);
+    if (namedDayFirst) {
+      dayFirstEvidence++;
+      const parsed = parseDate(raw);
+      if (parsed) knownMonths.add(parsed.slice(0, 7));
+      return;
+    }
+    const namedMonthFirst = raw.match(/^([A-Za-z]{3,9})\s+(\d{1,2}),?\s+(\d{2,4})/);
+    if (namedMonthFirst) {
+      monthFirstEvidence++;
+      const parsed = parseDate(raw);
+      if (parsed) knownMonths.add(parsed.slice(0, 7));
+      return;
+    }
+
     const parts = raw.match(/^(\d{1,2})[/-](\d{1,2})[/-](\d{2,4})/);
-    if (!parts) return;
-    const first = Number(parts[1]);
-    const second = Number(parts[2]);
-    let year = Number(parts[3]);
-    if (year < 100) year += year >= 70 ? 1900 : 2000;
-    if (first > 12 && second <= 12) { dayFirstEvidence++; return; }
-    if (second > 12 && first <= 12) { monthFirstEvidence++; return; }
-    const dayFirst = toIso(year, second, first);
-    const monthFirst = toIso(year, first, second);
-    if (dayFirst) dayFirstMonths.add(dayFirst.slice(0, 7));
-    if (monthFirst) monthFirstMonths.add(monthFirst.slice(0, 7));
+    if (parts) {
+      const first = Number(parts[1]);
+      const second = Number(parts[2]);
+      let year = Number(parts[3]);
+      if (year < 100) year += year >= 70 ? 1900 : 2000;
+      if (first > 12 && second <= 12) {
+        dayFirstEvidence++;
+        const parsed = toIso(year, second, first);
+        if (parsed) knownMonths.add(parsed.slice(0, 7));
+        return;
+      }
+      if (second > 12 && first <= 12) {
+        monthFirstEvidence++;
+        const parsed = toIso(year, first, second);
+        if (parsed) knownMonths.add(parsed.slice(0, 7));
+        return;
+      }
+      const dayFirst = toIso(year, second, first);
+      const monthFirst = toIso(year, first, second);
+      if (dayFirst) dayFirstMonths.add(dayFirst.slice(0, 7));
+      if (monthFirst) monthFirstMonths.add(monthFirst.slice(0, 7));
+      return;
+    }
+
+    // Textual month names are explicit dates but do not reveal whether a
+    // separate numeric slash date uses day-first or month-first ordering.
+    const parsed = parseDate(raw);
+    if (parsed) knownMonths.add(parsed.slice(0, 7));
   });
+
   if (dayFirstEvidence && !monthFirstEvidence) return "day-first";
   if (monthFirstEvidence && !dayFirstEvidence) return "month-first";
-  if (dayFirstEvidence || monthFirstEvidence) return "ambiguous";
-  // When every slash date is ambiguous, choose the interpretation with the
-  // tighter observed month range. A single April–June series should not become
-  // scattered across January–December simply because dates are <= 12.
+
+  // With competing textual formats, as with only ambiguous numeric slash
+  // values, prefer the interpretation that
+  // best fits the observed ISO/textual month range. This keeps a single
+  // April–June invoice series from being scattered across March, September,
+  // and October merely because dates are <= 12.
   if (dayFirstMonths.size && monthFirstMonths.size) {
-    if (dayFirstMonths.size < monthFirstMonths.size) return "day-first";
-    if (monthFirstMonths.size < dayFirstMonths.size) return "month-first";
+    const totalMonths = (candidateMonths: Set<string>) => new Set(Array.from(knownMonths).concat(Array.from(candidateMonths))).size;
+    const dayFirstTotal = totalMonths(dayFirstMonths);
+    const monthFirstTotal = totalMonths(monthFirstMonths);
+    if (dayFirstTotal < monthFirstTotal) return "day-first";
+    if (monthFirstTotal < dayFirstTotal) return "month-first";
   }
   return "ambiguous";
 };
