@@ -123,6 +123,24 @@ describe("Ask Peter full-cleaned-data query service", () => {
     expect(result.answer).toContain("not an external business diagnosis");
   });
 
+  it("calculates overlapping factors as a distinct cleaned-row query", () => {
+    const result = ask("Which factors overlap with United States?");
+
+    expect(result.plan.intent).toBe("overlap");
+    expect(result.answer).toContain("Within Country: United States, the largest overlapping factors were");
+    expect(result.answer).toContain("Product: SaaS");
+    expect(result.answer).toContain("should not be added together");
+    expect(result.evidence.source).toBe("cleaned_rows");
+  });
+
+  it("asks for clarification when an overlap request has no resolvable scope", () => {
+    const result = ask("Which factors overlap?");
+
+    expect(result.plan.intent).toBe("unsupported");
+    expect(result.answer).toContain("I’m not fully sure what you’re asking — could you rephrase?");
+    expect(result.answer).not.toContain("United States moved");
+  });
+
   it("uses cleaned rows for a scoped company drilldown", () => {
     const result = ask("Which companies changed most within United States?");
 
@@ -141,6 +159,25 @@ describe("Ask Peter full-cleaned-data query service", () => {
     expect(result.evidence.source).toBe("cleaned_rows");
   });
 
+  it("asks for clarification for an unrecognised free-typed request instead of selecting a nearest driver", () => {
+    const result = ask("Tell me something useful about it");
+
+    expect(result.plan.intent).toBe("unsupported");
+    expect(result.answer).toContain("I’m not fully sure what you’re asking — could you rephrase?");
+    expect(result.answer).not.toContain("United States moved");
+    expect(result.answer).not.toContain("Based on the cleaned data, prioritise");
+  });
+
+  it("blocks a manually mismatched plan before any unrelated answer is rendered", () => {
+    const aggregateRows = aggregates();
+    const mismatchedPlan = { ...planPeterQuestion("Why did United States change?", analysis, profiles, aggregateRows), intent: "explain" as const };
+    const result = answerPeterQuery({ question: "What are the top 5 countries?", analysis, profiles, aggregates: aggregateRows, rows, plan: mismatchedPlan });
+
+    expect(result.answer).toContain("I’m not fully sure what you’re asking — could you rephrase?");
+    expect(result.answer).toContain("asks for a ranking");
+    expect(result.evidence.items).toHaveLength(0);
+  });
+
   it("returns an honest limitation for a company not present in the import", () => {
     const result = ask("Why did company Missing Co change?");
 
@@ -153,6 +190,6 @@ describe("Ask Peter full-cleaned-data query service", () => {
     const result = ask("What will layoffs be next quarter?");
 
     expect(result.plan.intent).toBe("unsupported");
-    expect(result.answer).toContain("I can’t answer that specific question");
+    expect(result.answer).toContain("I’m not fully sure what you’re asking — could you rephrase?");
   });
 });

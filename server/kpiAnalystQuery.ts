@@ -18,7 +18,7 @@ export type PeterAggregate = {
 
 type PeriodValues = { previous: number; current: number; impact: number; records: number };
 export type PeterFactor = PeriodValues & { dimension: string; value: string; confidence: number };
-export type PeterIntent = "top_n" | "factor_rank" | "compare" | "counterfactual" | "explain" | "recommend" | "drilldown" | "unsupported";
+export type PeterIntent = "top_n" | "factor_rank" | "compare" | "counterfactual" | "overlap" | "explain" | "recommend" | "drilldown" | "unsupported";
 
 export type PeterQueryPlan = {
   intent: PeterIntent;
@@ -59,6 +59,26 @@ const ordinal = (value: number) => {
   return `${value}${({ 1: "st", 2: "nd", 3: "rd" } as Record<number, string>)[value % 10] ?? "th"}`;
 };
 const pluralise = (value: string, count: number) => count === 1 ? value : value.endsWith("y") ? `${value.slice(0, -1)}ies` : `${value}s`;
+
+const topicForQuestion = (question: string): "top" | "compare" | "counterfactual" | "overlap" | "recommend" | "drilldown" | "explain" | "clarify" => {
+  const text = normalise(question);
+  if (/\boverlap\b|\bco-?occur(?:ring|rence)?\b|\btogether with\b/.test(text)) return "overlap";
+  if (/\baside\b|\bbesides\b|\bother\b|\bexcluding\b|\bexcept\b|\bafter\b/.test(text)) return "compare";
+  if (/\btop\b|\bhighest\b|\blargest\b|\bbiggest\b|\brank(?:ed|ing)?\b/.test(text)) return "top";
+  if (/\bwhat if\b|\bstayed flat\b|\bwithout\b/.test(text)) return "counterfactual";
+  if (/\bfix\b|\bpriority\b|\bprioritise\b|\bprioritize\b|\bwhat should\b|\bnext step\b|\bfocus on\b/.test(text)) return "recommend";
+  if (/\bcompany\b|\bcompanies\b|\bcustomer\b|\bclient\b|\bemployer\b|\brow\b|\brows\b|\btransaction\b/.test(text) && !/\bwhy\b|\bcause\b|\bexplain\b/.test(text)) return "drilldown";
+  if (/\bwhy\b|\bcause\b|\bexplain\b|\bchanged?\b|\bdrop\b|\bdecline\b|\bincrease\b/.test(text)) return "explain";
+  return "clarify";
+};
+
+const planMatchesQuestionTopic = (question: string, plan: PeterQueryPlan) => {
+  const topic = topicForQuestion(question);
+  if (topic === "clarify") return "I’m not fully sure which analysis you want. Please name the comparison, ranking, explanation, overlap, counterfactual, or recommendation you need.";
+  if (topic === "top" && !["top_n", "factor_rank"].includes(plan.intent)) return "Your question asks for a ranking, but the resolved query is not a ranking.";
+  if (topic !== "top" && topic !== plan.intent) return `Your question asks for ${topic}, but the resolved query is ${plan.intent}.`;
+  return null;
+};
 
 const rankLimit = (question: string) => {
   const text = normalise(question);
@@ -163,6 +183,7 @@ export const planPeterQuestion = (question: string, analysis: KpiAnalysis, profi
   const asksOther = /\baside\b|\bbesides\b|\bother\b|\bexcluding\b|\bexcept\b|\bafter\b/.test(text);
   const asksExplicitTopList = /\btop\s+(?:\d+|one|two|three|four|five|six|seven|eight|nine|ten)\b/.test(text);
   const asksRecommendation = /\bfix\b|\bpriority\b|\bprioritise\b|\bprioritize\b|\bwhat should\b|\bnext step\b|\bfocus on\b/.test(text);
+  const asksOverlap = /\boverlap\b|\bco-?occur(?:ring|rence)?\b|\btogether with\b/.test(text);
   const asksCounterfactual = /\bwhat if\b|\bstayed flat\b|\bwithout\b/.test(text);
   const asksCompanyOrRows = /\bcompany\b|\bcompanies\b|\bcustomer\b|\bclient\b|\bemployer\b|\brow\b|\brows\b|\btransaction\b/.test(text);
   const namedCompanyReference = /\b(?:company|customer|client|employer)\s+(?!changed?\b|changes?\b|with\b|within\b|or\b|and\b|that\b)([a-z0-9][a-z0-9 .&-]{1,80})/.test(text);
@@ -170,6 +191,9 @@ export const planPeterQuestion = (question: string, analysis: KpiAnalysis, profi
   const asksWhy = /\bwhy\b|\bcause\b|\bexplain\b|\bchanged?\b|\bdrop\b|\bdecline\b|\bincrease\b/.test(text);
   const exclusions = asksOther && entity ? [entity] : [];
   const rankBy: PeterQueryPlan["rankBy"] = /\bfactor\b|\bimpact\b|\baffected\b|\bchange\b/.test(text) && !/\btop\s+\d+\s+(?:countries|country|products|product|companies|company|regions|region)\b/.test(text) ? "absolute_change" : "current";
+  if (asksOverlap && !entity && !rows) return { intent: "overlap", dimension: null, entity: null, exclusions: [], limit: 5, rankBy: "absolute_change", needsRows: true, reason: "resolve_overlap_scope_in_rows" };
+  if (asksOverlap && !entity) return { intent: "unsupported", dimension: null, entity: null, exclusions: [], limit: 0, rankBy: "current", needsRows: false, reason: "overlap_scope_not_found" };
+  if (asksOverlap) return { intent: "overlap", dimension: mentionedFactor?.dimension ?? dimension, entity, exclusions: [], limit: 5, rankBy: "absolute_change", needsRows: true, reason: "co_occurrence_request" };
   if (namedCompanyReference && !companyFactor && !rows) return { intent: "drilldown", dimension, entity: null, exclusions: [], limit: rankLimit(question), rankBy: "absolute_change", needsRows: true, reason: "resolve_named_company_in_rows" };
   if (namedCompanyReference && !companyFactor) return { intent: "unsupported", dimension: null, entity: null, exclusions: [], limit: 0, rankBy: "current", needsRows: false, reason: "named_company_not_found" };
   if (asksOther && dimension && !asksExplicitTopList) return { intent: "compare", dimension, entity, exclusions, limit: 1, rankBy: "current", needsRows: !availableFactors.some(factor => factor.dimension === dimension) || Boolean(analysis.outlierSensitivity?.explanationChanged), reason: "excluded_entity_comparison" };
@@ -201,7 +225,7 @@ export const resolvePeterPlanWithAi = async (question: string, analysis: KpiAnal
           schema: {
             type: "object",
             properties: {
-              intent: { type: "string", enum: ["top_n", "compare", "counterfactual", "explain", "recommend", "drilldown", "unsupported"] },
+              intent: { type: "string", enum: ["top_n", "compare", "counterfactual", "overlap", "explain", "recommend", "drilldown", "unsupported"] },
               dimension: { type: ["string", "null"] },
               entity: { type: ["string", "null"] },
               exclusion: { type: ["string", "null"] },
@@ -257,7 +281,8 @@ export const resolvePeterPlanWithAi = async (question: string, analysis: KpiAnal
   }
 };
 
-const limitation = (analysis: KpiAnalysis, dimensions: string[], reason: string) => `I can’t answer that specific question from this import with confidence. ${reason} I can reliably compare ${dimensions.slice(0, 8).join(", ") || "the detected dimensions"}, rank a specific dimension, explain a named segment, or show company-level changes where that field exists.`;
+const limitation = (analysis: KpiAnalysis, dimensions: string[], reason: string) => `I can’t answer that specific question from this import with confidence. ${reason} I can reliably compare ${dimensions.slice(0, 8).join(", ") || "the detected dimensions"}, rank a specific dimension, explain a named segment, show overlapping factors within a named segment, or show company-level changes where that field exists.`;
+const clarification = (reason: string) => `I’m not fully sure what you’re asking — could you rephrase? ${reason} For example, you can ask for a top-ranked dimension, why a named segment changed, which factors overlap within it, or what would have happened if it stayed flat.`;
 
 const factorFromPlan = (plan: PeterQueryPlan, factors: PeterFactor[]) => {
   const scoped = factors.filter(factor => (!plan.dimension || factor.dimension === plan.dimension) && !plan.exclusions.some(value => normalise(value) === normalise(factor.value)));
@@ -293,17 +318,21 @@ const validateResult = (plan: PeterQueryPlan, items: PeterFactor[]) => {
 };
 
 export const answerPeterQuery = (input: { question: string; analysis: KpiAnalysis; profiles: ColumnProfile[]; aggregates: PeterAggregate[]; rows?: PeterImportRow[]; plan: PeterQueryPlan }): PeterAnswer => {
-  const { analysis, profiles, aggregates, rows, plan } = input;
+  const { question, analysis, profiles, aggregates, rows, plan } = input;
   const dimensions = eligibleDimensions(profiles).filter(dimension => dimension !== analysis.metric && dimension !== analysis.dateColumn);
   const source = rows ? "cleaned_rows" as const : "aggregates" as const;
   const factors = rows ? buildFactorsFromRows(rows, profiles, analysis) : buildFactorsFromAggregates(aggregates, profiles, analysis);
   const previous = longReadablePeriod(analysis.previousPeriod);
   const current = longReadablePeriod(analysis.currentPeriod);
   const unsupported = (reason: string): PeterAnswer => ({ answer: limitation(analysis, dimensions, reason), confidence: analysis.confidence, plan, evidence: { dimension: plan.dimension, items: [], exclusionApplied: plan.exclusions, source } });
+  const askForClarification = (reason: string): PeterAnswer => ({ answer: clarification(reason), confidence: analysis.confidence, plan, evidence: { dimension: null, items: [], exclusionApplied: [], source } });
+  const topicMismatch = plan.intent === "unsupported" ? (plan.reason === "no_safe_query_interpretation" || plan.reason === "ai_could_not_safely_interpret" ? "I could not confidently map this wording to a distinct data query." : null) : planMatchesQuestionTopic(question, plan);
+  if (topicMismatch) return askForClarification(topicMismatch);
   if (plan.intent === "unsupported") {
     if (plan.reason === "named_company_not_found") return unsupported("I could not find a matching company, customer, client, or employer in the cleaned data.");
     if (plan.reason === "ai_entity_not_present") return unsupported("The named entity was not present in the cleaned data, so I will not substitute a different segment.");
-    return unsupported("I could not safely determine which dimension, entity, comparison, or calculation you intended.");
+    if (plan.reason === "overlap_scope_not_found") return askForClarification("I could not identify the named segment whose overlapping factors you want to examine.");
+    return askForClarification("I could not confidently map this wording to a distinct data query.");
   }
   if (plan.intent === "top_n") {
     if (!plan.dimension) return unsupported("Please name a dimension, such as countries, products, regions, or companies.");
@@ -332,6 +361,27 @@ export const answerPeterQuery = (input: { question: string; analysis: KpiAnalysi
     if (!items.length) return unsupported("There were no negative measurable dimension changes in the selected comparison.");
     const listed = items.map((item, index) => `${index + 1}. ${item.dimension}: ${item.value} (${signedMetric(item.impact, analysis.currencySymbol)})`).join("; ");
     return { answer: `Based on the cleaned data, prioritise: ${listed}. These are the largest negative dimension-level movements between ${previous} and ${current}; they are evidence-backed priorities, not an external business diagnosis.`, confidence: Math.round(items.reduce((total, item) => total + item.confidence, 0) / items.length), plan, evidence: { dimension: null, items, exclusionApplied: [], source } };
+  }
+  if (plan.intent === "overlap") {
+    if (!rows || !plan.dimension || !plan.entity) return askForClarification("I need a named segment and its cleaned-row evidence to calculate overlapping factors.");
+    const scopeFactor = factors.find(factor => factor.dimension === plan.dimension && normalise(factor.value) === normalise(plan.entity ?? ""));
+    if (!scopeFactor) return askForClarification(`I could not find ${plan.dimension}: ${plan.entity} in the cleaned data.`);
+    const scopedRows = rowsForFactor(rows, scopeFactor, analysis);
+    const overlapTotals = new Map<string, { dimension: string; value: string; previous: number; current: number; records: number }>();
+    scopedRows.forEach(row => dimensions.filter(dimension => dimension !== scopeFactor.dimension).forEach(dimension => {
+      const value = safeText(row.values[dimension]);
+      if (isUnknown(value)) return;
+      const key = `${dimension}\u0000${value}`;
+      const current = overlapTotals.get(key) ?? { dimension, value, previous: 0, current: 0, records: 0 };
+      if (row.period === analysis.previousPeriod) current.previous += row.metric;
+      else current.current += row.metric;
+      current.records += 1;
+      overlapTotals.set(key, current);
+    }));
+    const items = materialiseFactors(overlapTotals.values(), analysis).filter(item => item.impact !== 0).sort(byAbsoluteChange).slice(0, plan.limit);
+    if (!items.length) return unsupported(`No measurable overlapping dimension changes were found within ${scopeFactor.dimension}: ${scopeFactor.value}.`);
+    const listed = items.map((item, index) => `${index + 1}. ${item.dimension}: ${item.value} (${plainMetric(item.previous, analysis.currencySymbol)} → ${plainMetric(item.current, analysis.currencySymbol)}; ${signedMetric(item.impact, analysis.currencySymbol)})`).join("; ");
+    return { answer: `Within ${scopeFactor.dimension}: ${scopeFactor.value}, the largest overlapping factors were: ${listed}. Each factor is calculated independently from rows that co-occur with this segment between ${previous} and ${current}, so the impacts can overlap and should not be added together.`, confidence: Math.round(items.reduce((total, item) => total + item.confidence, 0) / items.length), plan, evidence: { dimension: scopeFactor.dimension, items, exclusionApplied: [], source: "cleaned_rows" } };
   }
   if (plan.intent === "drilldown") {
     if (!rows) return unsupported("A row-level drilldown was not available for this request.");
