@@ -6,7 +6,7 @@ import { createImportUploadUrl, getImportObjectInfo } from "./kpiImportStorage";
 import { applyImportReviewAction, processKpiImport, recalculateKpiImport } from "./kpiImportWorker";
 import { invokeLLM } from "./_core/llm";
 import { fallbackAnalystAnswer, type AnalystContext } from "./kpiAnalyst";
-import { answerPeterQuery, isAnswerablePeterSuggestion, planPeterQuestion, resolvePeterPlanWithAi } from "./kpiAnalystQuery";
+import { answerPeterQuery, isAnswerablePeterSuggestion, peterSuggestionSignature, planPeterQuestion, resolvePeterPlanWithAi } from "./kpiAnalystQuery";
 import type { ColumnProfile, KpiAnalysis } from "../shared/kpiEngine";
 import { getSessionCookieOptions } from "./_core/cookies";
 import { notifyOwner } from "./_core/notification";
@@ -246,11 +246,16 @@ export const appRouter = router({
         "What should I investigate next?",
       ];
       const [aggregates, rows] = await Promise.all([getImportAggregates(input.importId), getAllImportRows(input.importId)]);
+      const seenResults = new Set<string>();
       return candidates.filter(question => {
         const plan = planPeterQuestion(question, analysis, profiles, aggregates, rows);
         if (plan.intent === "unsupported") return false;
         const response = answerPeterQuery({ question, analysis, profiles, aggregates, rows, plan });
-        return isAnswerablePeterSuggestion(response);
+        if (!isAnswerablePeterSuggestion(response)) return false;
+        const signature = peterSuggestionSignature(response);
+        if (seenResults.has(signature)) return false;
+        seenResults.add(signature);
+        return true;
       });
     }),
   }),

@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { ColumnProfile, KpiAnalysis } from "../shared/kpiEngine";
-import { answerPeterQuery, isAnswerablePeterSuggestion, planPeterQuestion, type PeterAggregate, type PeterImportRow } from "./kpiAnalystQuery";
+import { answerPeterQuery, isAnswerablePeterSuggestion, peterSuggestionSignature, planPeterQuestion, type PeterAggregate, type PeterImportRow } from "./kpiAnalystQuery";
 
 const analysis: KpiAnalysis = {
   metric: "total_laid_off",
@@ -121,6 +121,15 @@ describe("Ask Peter full-cleaned-data query service", () => {
     expect(result.answer).toContain("Based on the cleaned data, prioritise");
     expect(result.answer).toContain("United States");
     expect(result.answer).toContain("not an external business diagnosis");
+  });
+
+  it("gives equivalent recommendation phrasings the same suggestion signature", () => {
+    const fix = ask("What do I fix in the company?");
+    const investigate = ask("What should I investigate next?");
+
+    expect(fix.plan.intent).toBe("recommend");
+    expect(investigate.plan.intent).toBe("recommend");
+    expect(peterSuggestionSignature(fix)).toBe(peterSuggestionSignature(investigate));
   });
 
   it("calculates date-level movement as a distinct cleaned-row query", () => {

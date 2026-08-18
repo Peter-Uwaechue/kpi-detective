@@ -46,6 +46,20 @@ export type PeterAnswer = {
 
 export const isAnswerablePeterSuggestion = (response: PeterAnswer) => response.plan.intent !== "unsupported" && response.evidence.items.length > 0 && !response.answer.startsWith("I’m not fully sure") && !response.answer.startsWith("I can’t answer");
 
+export const peterSuggestionSignature = (response: PeterAnswer) => {
+  const planUsesSegmentBinding = !["recommend", "factor_rank"].includes(response.plan.intent);
+  return JSON.stringify({
+    intent: response.plan.intent,
+    dimension: planUsesSegmentBinding ? response.plan.dimension : null,
+    entity: planUsesSegmentBinding ? response.plan.entity : null,
+    exclusions: planUsesSegmentBinding ? response.plan.exclusions.map(normalise).sort() : [],
+    rankBy: response.plan.rankBy,
+    scope: planUsesSegmentBinding && response.plan.scope ? { dimension: response.plan.scope.dimension, value: normalise(response.plan.scope.value) } : null,
+    evidenceDimension: response.evidence.dimension,
+    evidence: response.evidence.items.map(item => ({ dimension: item.dimension, value: normalise(item.value), previous: item.previous, current: item.current, impact: item.impact })),
+  });
+};
+
 type ComparisonRow = { values: Record<string, unknown>; metric: number; period: string };
 
 const PETER_PLANNER_TIMEOUT_MS = 4_000;
