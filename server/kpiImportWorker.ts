@@ -260,6 +260,13 @@ export async function* streamRecords(fileName: string, stream: Readable): AsyncG
 
 const findMetric = (profiles: ColumnProfile[]) => profiles.find(profile => profile.isSelectedMetric && profile.kind === "number") ?? profiles.filter(profile => profile.kind === "number").sort((a, b) => headerScore(b.name, REVENUE_TERMS) - headerScore(a.name, REVENUE_TERMS) || b.confidence - a.confidence)[0];
 const findDate = (profiles: ColumnProfile[]) => profiles.filter(profile => profile.kind === "date").sort((a, b) => headerScore(b.name, DATE_TERMS) - headerScore(a.name, DATE_TERMS) || b.confidence - a.confidence)[0];
+const profilingDetail = (profiles: ColumnProfile[]) => profiles.map(profile => {
+  const selected = profile.isSelectedMetric ? "; selected KPI" : "";
+  const preference = profile.kind === "date" && profile.datePreference ? `; ${profile.datePreference}` : "";
+  const displayName = profile.label && profile.label !== profile.name ? `${profile.label} (${profile.name})` : profile.name;
+  return `${displayName}: ${profile.kind} (${profile.confidence}%${selected}${preference})`;
+}).join(" · ");
+const profilingFailureMessage = (profiles: ColumnProfile[]) => `We could not identify both a reliable date column and numeric KPI. Profiled columns: ${profilingDetail(profiles)}.`;
 const normaliseCategory = (value: unknown) => (value === null || value === undefined ? "" : String(value)).replace(/\u00a0/g, " ").replace(/\s+/g, " ").trim() || UNKNOWN;
 
 function cleanRow(row: RawRecord, profiles: ColumnProfile[], stats: WorkerStats) {
@@ -677,7 +684,18 @@ export async function processKpiImport(importId: string, options: { claimed?: bo
   const profiles = inferProfiles(headers, profileSamples);
   const metric = findMetric(profiles);
   const date = findDate(profiles);
-  if (!metric || !date) throw new Error("We could not identify both a reliable date column and numeric KPI. Ensure the columns contain mostly valid dates and amounts, even if a few cells contain placeholders such as TBD or cash.");
+  if (!metric || !date) {
+    const detail = profilingFailureMessage(profiles);
+    await updateKpiImport(importId, {
+      status: "failed",
+      columnsJson: profiles,
+      cleaningSummaryJson: [{ key: "profiling", title: "Column profiling could not select an analysis pair", detail, count: profiles.length, severity: "warning" }],
+      workerCheckpointJson: { phase: "profiling-failed", profiledRows, headers },
+      errorMessage: detail,
+      completedAt: new Date(),
+    });
+    throw new Error(detail);
+  }
   await updateKpiImport(importId, { status: "ingesting", columnsJson: profiles, workerCheckpointJson: { phase: "ingesting", batchSize: BATCH_SIZE } });
   const stats: WorkerStats = { sourceRows: 0, usableRows: 0, exactDuplicates: 0, missingNumeric: 0, invalidNumeric: 0, dateChanges: 0, numericChanges: 0, categoryChanges: 0, fuzzyCategoryMerges: 0, fuzzyCategoryRows: 0, possibleDuplicates: 0, outliers: 0 };
   let rows: ReviewRow[] = [];
@@ -793,6 +811,8 @@ export const __kpiImportWorkerTesting = {
   applyFuzzyCategoryReview,
   applyPossibleDuplicateReview,
   logsFromStats,
+  profilingDetail,
+  profilingFailureMessage,
   signatureFor,
 };
 

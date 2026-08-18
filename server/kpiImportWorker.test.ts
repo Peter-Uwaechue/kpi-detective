@@ -190,3 +190,20 @@ describe("KPI import real-world data-shape matrix", () => {
     expect(metric).toMatchObject({ name: "__derived_amount__", metricRecipe: { kind: "quantity_times_price", quantityColumn: "Quantity", unitValueColumn: "UnitPrice" } });
     expect(cleaned.cleanedValues.__derived_amount__).toBe(105);
   });
+
+
+it("explains rejected profiling decisions with the selected and classified columns", () => {
+  const rows: RawRecord[] = [
+    { InvoiceNo: "INV-1000", Quantity: "1", UnitPrice: "£10.00", InvoiceDate: "28-May-2026" },
+    { InvoiceNo: "INV-1001", Quantity: "2", UnitPrice: "£11.00", InvoiceDate: "29-May-2026" },
+  ];
+  const profiles = __kpiImportWorkerTesting.inferProfiles(Object.keys(rows[0]!), rows);
+  const detail = __kpiImportWorkerTesting.profilingDetail(profiles);
+
+  expect(detail).toContain("InvoiceNo: identifier");
+  expect(detail).toContain("Quantity: number");
+  expect(detail).toContain("UnitPrice: number");
+  expect(detail).toContain("InvoiceDate: date");
+  expect(detail).toContain("Derived Amount (__derived_amount__): number");
+  expect(detail).toContain("selected KPI");
+});
