@@ -1,11 +1,12 @@
 import { COOKIE_NAME } from "@shared/const";
 import { z } from "zod";
 import { createCandidateReferral } from "./db";
-import { createKpiImport, getAllImportRows, getKpiImport, getPreviewPage, resetKpiImportData, updateKpiImport } from "./kpiImportDb";
+import { createKpiImport, getAllImportRows, getImportAggregates, getKpiImport, getPreviewPage, resetKpiImportData, updateKpiImport } from "./kpiImportDb";
 import { createImportUploadUrl, getImportObjectInfo } from "./kpiImportStorage";
 import { applyImportReviewAction, processKpiImport, recalculateKpiImport } from "./kpiImportWorker";
 import { invokeLLM } from "./_core/llm";
-import { answerImportQuestion, buildImportAnalystEvidence, fallbackAnalystAnswer, type AnalystContext } from "./kpiAnalyst";
+import { fallbackAnalystAnswer, type AnalystContext } from "./kpiAnalyst";
+import { answerPeterQuery, planPeterQuestion, resolvePeterPlanWithAi } from "./kpiAnalystQuery";
 import type { ColumnProfile, KpiAnalysis } from "../shared/kpiEngine";
 import { getSessionCookieOptions } from "./_core/cookies";
 import { notifyOwner } from "./_core/notification";
@@ -211,12 +212,16 @@ export const appRouter = router({
       if (!validImportedAnalysis(job.analysisJson)) throw new Error("This import does not yet have a complete analysis.");
       const analysis = job.analysisJson;
       const profiles = Array.isArray(job.columnsJson) ? job.columnsJson as ColumnProfile[] : [];
-      const rows = await getAllImportRows(input.importId);
-      const evidence = buildImportAnalystEvidence(input.question, analysis, rows, profiles);
+      const aggregates = await getImportAggregates(input.importId);
+      const deterministicPlan = planPeterQuestion(input.question, analysis, profiles, aggregates);
+      let plan = await resolvePeterPlanWithAi(input.question, analysis, profiles, aggregates, deterministicPlan);
+      const rows = plan.needsRows ? await getAllImportRows(input.importId) : undefined;
+      if (rows && plan.reason !== "structured_ai_plan") plan = planPeterQuestion(input.question, analysis, profiles, aggregates, rows);
+      const response = answerPeterQuery({ question: input.question, analysis, profiles, aggregates, rows, plan });
       return {
-        answer: answerImportQuestion(input.question, analysis, evidence),
+        answer: response.answer,
         generated: false,
-        confidence: evidence.focus?.confidence ?? analysis.confidence,
+        confidence: response.confidence,
       };
     }),
   }),
