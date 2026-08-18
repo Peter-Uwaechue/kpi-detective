@@ -281,6 +281,11 @@ const periodLabel = (period: string) => {
   return new Intl.DateTimeFormat("en-US", { month: "short", year: "numeric", timeZone: "UTC" }).format(new Date(Date.UTC(year, month - 1, 1)));
 };
 
+export const longReadablePeriod = (period: string) => {
+  const [year, month] = period.split("-").map(Number);
+  return new Intl.DateTimeFormat("en-US", { month: "long", year: "numeric", timeZone: "UTC" }).format(new Date(Date.UTC(year, month - 1, 1)));
+};
+
 const findCurrencySymbol = (rawRows: Record<string, unknown>[], column: string) => {
   const sample = rawRows.map(row => cellText(row[column])).find(value => /[₦$€£¥₹]/.test(value));
   return sample?.match(/[₦$€£¥₹]/)?.[0] ?? "";
@@ -521,7 +526,7 @@ export function investigateKpi(dataset: CleanedDataset, sourceRows: Record<strin
   const counterfactualSentence = leading[0]
     ? `If ${leading[0].dimension}: ${leading[0].value} had stayed at its prior-month level, ${name.toLowerCase()} would have been about ${formatMetric(counterfactual, currencySymbol)}.`
     : `No individual category met the materiality threshold for a separate counterfactual.`;
-  const summary = `${name} ${direction} ${Math.abs(changePercent).toFixed(1)}% from ${formatMetric(previousTotal, currencySymbol)} in ${periodLabel(previousPeriod)} to ${formatMetric(currentTotal, currencySymbol)} in ${periodLabel(currentPeriod)}. The largest contributors were ${factors}. We are ${weightedConfidence}% confident in this explanation. ${counterfactualSentence}`;
+  const summary = `${name} ${direction} ${Math.abs(changePercent).toFixed(1)}% from ${formatMetric(previousTotal, currencySymbol)} in ${longReadablePeriod(previousPeriod)} to ${formatMetric(currentTotal, currencySymbol)} in ${longReadablePeriod(currentPeriod)}. The largest contributors were ${factors}. We are ${weightedConfidence}% confident in this explanation. ${counterfactualSentence}`;
   return {
     metric: metric.name,
     metricLabel: name,
@@ -562,16 +567,16 @@ export function answerDataQuestion(question: string, dataset: CleanedDataset, an
     const customer = topCustomerWithin(dataset, analysis, referencedCause);
     if (customer) {
       const scope = referencedCause ? ` within ${referencedCause.dimension}: ${referencedCause.value}` : " overall";
-      return { answer: `${customer.name} had the largest negative change${scope}, contributing ${formatMetric(Math.abs(customer.impact), analysis.currencySymbol)} of decline between ${periodLabel(analysis.previousPeriod)} and ${periodLabel(analysis.currentPeriod)}.`, confidence: referencedCause?.confidence ?? analysis.confidence, supportingValue: customer.impact };
+      return { answer: `${customer.name} had the largest negative change${scope}, contributing ${formatMetric(Math.abs(customer.impact), analysis.currencySymbol)} of decline between ${longReadablePeriod(analysis.previousPeriod)} and ${longReadablePeriod(analysis.currentPeriod)}.`, confidence: referencedCause?.confidence ?? analysis.confidence, supportingValue: customer.impact };
     }
   }
   if (/what if|without|flat|recover|recovering/.test(text) && referencedCause) {
-    return { answer: `If ${referencedCause.dimension}: ${referencedCause.value} had stayed at its ${periodLabel(analysis.previousPeriod)} level, ${analysis.metricLabel.toLowerCase()} would have been approximately ${formatMetric(referencedCause.counterfactual, analysis.currencySymbol)} in ${periodLabel(analysis.currentPeriod)}—${formatMetric(Math.abs(referencedCause.impact), analysis.currencySymbol)} higher than observed.`, confidence: referencedCause.confidence, supportingValue: referencedCause.counterfactual };
+    return { answer: `If ${referencedCause.dimension}: ${referencedCause.value} had stayed at its ${longReadablePeriod(analysis.previousPeriod)} level, ${analysis.metricLabel.toLowerCase()} would have been approximately ${formatMetric(referencedCause.counterfactual, analysis.currencySymbol)} in ${longReadablePeriod(analysis.currentPeriod)}—${formatMetric(Math.abs(referencedCause.impact), analysis.currencySymbol)} higher than observed.`, confidence: referencedCause.confidence, supportingValue: referencedCause.counterfactual };
   }
   if (/why|cause|drop|decline|increase|change/.test(text)) {
     const causes = referencedCause ? [referencedCause] : analysis.causes.slice(0, 2);
     const explanation = causes.length ? causes.map(cause => `${cause.dimension}: ${cause.value} (${cause.impact >= 0 ? "+" : "-"}${formatMetric(Math.abs(cause.impact), analysis.currencySymbol)})`).join(" and ") : "small changes spread across several dimensions";
-    return { answer: `The clearest explanation is ${explanation}. These factors are measured against ${periodLabel(analysis.previousPeriod)} and account for the largest part of the ${analysis.metricLabel.toLowerCase()} change in ${periodLabel(analysis.currentPeriod)}.`, confidence: referencedCause?.confidence ?? analysis.confidence };
+    return { answer: `The clearest explanation is ${explanation}. These factors are measured against ${longReadablePeriod(analysis.previousPeriod)} and account for the largest part of the ${analysis.metricLabel.toLowerCase()} change in ${longReadablePeriod(analysis.currentPeriod)}.`, confidence: referencedCause?.confidence ?? analysis.confidence };
   }
   const leading = analysis.causes[0];
   return { answer: leading ? `The strongest finding is ${leading.dimension}: ${leading.value}, which changed ${analysis.metricLabel.toLowerCase()} by ${leading.impact >= 0 ? "+" : "-"}${formatMetric(Math.abs(leading.impact), analysis.currencySymbol)}. Ask me why it changed, which customer contributed, or what the KPI would have been without it.` : `I found a ${analysis.change >= 0 ? "positive" : "negative"} ${analysis.metricLabel.toLowerCase()} change, but no individual category met the materiality threshold for a confident driver.`, confidence: leading?.confidence ?? analysis.confidence };

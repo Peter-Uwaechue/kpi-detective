@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import type { ColumnProfile, KpiAnalysis } from "../shared/kpiEngine";
+import { longReadablePeriod, type ColumnProfile, type KpiAnalysis } from "../shared/kpiEngine";
 import { answerImportQuestion, buildImportAnalystEvidence, fallbackAnalystAnswer } from "./kpiAnalyst";
 
 const analysis: KpiAnalysis = {
@@ -52,7 +52,7 @@ describe("import-backed KPI analyst", () => {
     expect(answer).toContain("Atlas Labs");
     expect(answer).toContain("Post-IPO");
     expect(answer).toContain("SF Bay Area");
-    expect(answer).toContain("Feb 5 to Mar 5");
+    expect(answer).toContain("February 5, 2023 to March 5, 2023");
   });
 
   it("gives a distinct, action-oriented answer instead of recycling a driver paragraph", () => {
@@ -64,6 +64,16 @@ describe("import-backed KPI analyst", () => {
     expect(answer).not.toEqual(answerImportQuestion("Why did United States change?", analysis, evidence));
   });
 
+  it("formats analyst period wording with clear full month names", () => {
+    const evidence = buildImportAnalystEvidence("Why did United States change?", analysis, [...rows], profiles);
+    const answer = answerImportQuestion("Why did United States change?", analysis, evidence);
+
+    expect(longReadablePeriod("2023-02")).toBe("February 2023");
+    expect(answer).toContain("February 2023");
+    expect(answer).toContain("March 2023");
+    expect(answer).not.toContain("in 2023-02");
+  });
+
   it("answers a free-typed request for another country instead of falling back to the leading country", () => {
     const countryRows = [
       { excluded: false, isOutlier: false, cleanedValues: { date: "2023-02-03", total_laid_off: 1600, Country: "United States", Stage: "Post-IPO", Location: "SF Bay Area", Industry: "SaaS", Company: "Atlas Labs" } },
@@ -73,11 +83,31 @@ describe("import-backed KPI analyst", () => {
       { excluded: false, isOutlier: false, cleanedValues: { date: "2023-02-09", total_laid_off: 700, Country: "India", Stage: "Late", Location: "Bengaluru", Industry: "Fintech", Company: "East Co" } },
       { excluded: false, isOutlier: false, cleanedValues: { date: "2023-03-09", total_laid_off: 300, Country: "India", Stage: "Late", Location: "Bengaluru", Industry: "Fintech", Company: "East Co" } },
     ];
-    const evidence = buildImportAnalystEvidence("Aside United States what country also had high numbers?", analysis, countryRows, profiles);
-    const answer = answerImportQuestion("Aside United States what country also had high numbers?", analysis, evidence);
+    const evidence = buildImportAnalystEvidence("Why country number was high after the United States?", analysis, countryRows, profiles);
+    const answer = answerImportQuestion("Why country number was high after the United States?", analysis, evidence);
 
     expect(answer).toContain("Canada");
-    expect(answer).not.toContain("United States is the highest other country");
+    expect(answer).toContain("highest other country");
+    expect(answer).not.toContain("is United States at");
+  });
+
+  it("returns a top-N list constrained to the named dimension rather than an unrelated overall factor", () => {
+    const countryRows = [
+      { excluded: false, isOutlier: false, cleanedValues: { date: "2023-02-03", total_laid_off: 1600, Country: "United States", Stage: "Post-IPO", Location: "SF Bay Area", Industry: "SaaS", Company: "Atlas Labs" } },
+      { excluded: false, isOutlier: false, cleanedValues: { date: "2023-03-03", total_laid_off: 400, Country: "United States", Stage: "Post-IPO", Location: "SF Bay Area", Industry: "SaaS", Company: "Atlas Labs" } },
+      { excluded: false, isOutlier: false, cleanedValues: { date: "2023-02-06", total_laid_off: 900, Country: "Canada", Stage: "Growth", Location: "Toronto", Industry: "Commerce", Company: "North Co" } },
+      { excluded: false, isOutlier: false, cleanedValues: { date: "2023-03-06", total_laid_off: 300, Country: "Canada", Stage: "Growth", Location: "Toronto", Industry: "Commerce", Company: "North Co" } },
+      { excluded: false, isOutlier: false, cleanedValues: { date: "2023-02-09", total_laid_off: 700, Country: "India", Stage: "Late", Location: "Bengaluru", Industry: "Fintech", Company: "East Co" } },
+      { excluded: false, isOutlier: false, cleanedValues: { date: "2023-03-09", total_laid_off: 300, Country: "India", Stage: "Late", Location: "Bengaluru", Industry: "Fintech", Company: "East Co" } },
+    ];
+    const evidence = buildImportAnalystEvidence("What are the top 5 highest layoffs country?", analysis, countryRows, profiles);
+    const answer = answerImportQuestion("What are the top 5 highest layoffs country?", analysis, evidence);
+
+    expect(answer).toContain("within Country");
+    expect(answer).toContain("United States");
+    expect(answer).toContain("Canada");
+    expect(answer).toContain("India");
+    expect(answer).not.toContain("Industry: Commerce");
   });
 
   it("returns the requested ranked factor from all eligible factor values", () => {
