@@ -262,7 +262,7 @@ export const planPeterQuestion = (question: string, analysis: KpiAnalysis, profi
   if (asksTop) return { intent: "factor_rank", dimension: null, entity: null, exclusions: [], limit: rankLimit(question), rankBy: "absolute_change", needsRows: Boolean(analysis.outlierSensitivity?.explanationChanged), reason: "cross_dimension_factor_rank" };
   if (namedCompanyReference && !companyFactor && !rows) return { intent: "drilldown", dimension, entity: null, exclusions: [], limit: rankLimit(question), rankBy: "absolute_change", needsRows: true, reason: "resolve_named_company_in_rows" };
   if (namedCompanyReference && !companyFactor) return { intent: "unsupported", dimension: null, entity: null, exclusions: [], limit: 0, rankBy: "current", needsRows: false, reason: "named_company_not_found" };
-  if (asksCounterfactual) return { intent: "counterfactual", dimension, entity, exclusions, limit: 1, rankBy: "absolute_change", needsRows: Boolean(analysis.outlierSensitivity?.explanationChanged), reason: "counterfactual_request" };
+  if (asksCounterfactual) return { intent: "counterfactual", dimension: mentionedFactor?.dimension ?? dimension, entity, exclusions, limit: 1, rankBy: "absolute_change", needsRows: Boolean(analysis.outlierSensitivity?.explanationChanged), reason: "counterfactual_request" };
   if (asksRecommendation) return { intent: "recommend", dimension, entity, exclusions, limit: 3, rankBy: "absolute_change", needsRows: Boolean(analysis.outlierSensitivity?.explanationChanged), reason: "data_priority_request" };
   if (asksCompanyOrRows && entity && asksWhy && mentionedFactor?.dimension === dimension) return { intent: "explain", dimension, entity, exclusions, limit: 3, rankBy: "absolute_change", needsRows: true, reason: "named_company_explanation" };
   if (asksCompanyOrRows) return { intent: "drilldown", dimension, entity, exclusions, scope: mentionedFactor && mentionedFactor.dimension !== dimension ? { dimension: mentionedFactor.dimension, value: mentionedFactor.value } : undefined, limit: rankLimit(question), rankBy: "absolute_change", needsRows: true, reason: "company_or_row_drilldown" };
@@ -354,6 +354,15 @@ const factorFromPlan = (plan: PeterQueryPlan, factors: PeterFactor[]) => {
   const entity = plan.entity;
   if (entity) return scoped.find(factor => normalise(factor.value) === normalise(entity)) ?? null;
   return [...scoped].sort(plan.rankBy === "current" ? byCurrent : byAbsoluteChange)[0] ?? null;
+};
+
+const displayedCounterfactual = (analysis: KpiAnalysis, factor: PeterFactor) => {
+  const card = analysis.causes.find(cause => cause.dimension === factor.dimension && normalise(cause.value) === normalise(factor.value));
+  if (card) return { counterfactual: card.counterfactual, impact: card.impact, base: card.counterfactual + card.impact, outlierAdjusted: Boolean(analysis.outlierSensitivity?.explanationChanged) };
+  const displayedBase = analysis.outlierSensitivity?.explanationChanged && analysis.causes[0]
+    ? analysis.causes[0].counterfactual + analysis.causes[0].impact
+    : analysis.currentTotal;
+  return { counterfactual: displayedBase - factor.impact, impact: factor.impact, base: displayedBase, outlierAdjusted: Boolean(analysis.outlierSensitivity?.explanationChanged) };
 };
 
 const rowsForFactor = (rows: PeterImportRow[], factor: PeterFactor, analysis: KpiAnalysis) => comparisonRowsFromImport(rows, analysis).filter(row => safeText(row.values[factor.dimension]) === factor.value);
@@ -549,8 +558,9 @@ export const answerPeterQuery = (input: { question: string; analysis: KpiAnalysi
   if (!focus) return unsupported(plan.entity ? `I could not find “${plan.entity}” in ${plan.dimension ?? "the detected dimensions"}.` : "No matching segment was found for that question.");
   const scopedRows = rows ? rowsForFactor(rows, focus, analysis) : [];
   if (plan.intent === "counterfactual") {
-    const counterfactual = analysis.currentTotal - focus.impact;
-    return { answer: `If ${focus.dimension}: ${focus.value} had stayed at its ${previous} level, ${analysis.metricLabel.toLowerCase()} would have been about ${plainMetric(counterfactual, analysis.currencySymbol)} in ${current}. That is ${plainMetric(Math.abs(focus.impact), analysis.currencySymbol)} ${focus.impact < 0 ? "higher" : "lower"} than the observed current-period total, based on this segment’s measured impact.`, confidence: focus.confidence, plan, evidence: { dimension: focus.dimension, items: [focus], exclusionApplied: [], source } };
+    const displayed = displayedCounterfactual(analysis, focus);
+    const basis = displayed.outlierAdjusted ? ` This matches the outlier-adjusted driver-card basis of ${plainMetric(displayed.base, analysis.currencySymbol)}.` : "";
+    return { answer: `If ${focus.dimension}: ${focus.value} had stayed at its ${previous} level, ${analysis.metricLabel.toLowerCase()} would have been about ${plainMetric(displayed.counterfactual, analysis.currencySymbol)} in ${current}. That is ${plainMetric(Math.abs(displayed.impact), analysis.currencySymbol)} ${displayed.impact < 0 ? "higher" : "lower"} than the observed current-period total, based on this segment’s measured impact.${basis}`, confidence: focus.confidence, plan, evidence: { dimension: focus.dimension, items: [{ ...focus, impact: displayed.impact }], exclusionApplied: [], source } };
   }
   const detail = rows ? factorDetails(scopedRows, profiles, analysis, focus) : { companyColumn: null, topCompanies: [] };
   const companyText = detail.topCompanies.length ? ` The largest company-level changes within this segment were ${detail.topCompanies.map(item => `${item.value} (${signedMetric(item.impact, analysis.currencySymbol)})`).join(" and ")}.` : "";

@@ -204,6 +204,40 @@ describe("Ask Peter full-cleaned-data query service", () => {
     expect(whatIf.answer).toContain("higher than the observed current-period total");
   });
 
+  it.each([
+    ["What if United States had stayed flat?", "Country", "United States", 7062],
+    ["What if SaaS had stayed flat?", "Product", "SaaS", 3404],
+  ])("uses the exact displayed outlier-adjusted card counterfactual for %s", (question, dimension, value, expectedCounterfactual) => {
+    const adjustedAnalysis: KpiAnalysis = {
+      ...analysis,
+      currentTotal: 4470,
+      outlierSensitivity: {
+        outlierRows: 2,
+        baselinePrimary: { dimension: "Country", value: "United States", impact: -5291 },
+        outlierExcludedPrimary: { dimension: "Country", value: "United States", impact: -5291 },
+        baselinePrimaryImpactWithoutOutliers: -5291,
+        outlierImpactOnBaselinePrimary: 0,
+        explanationChanged: true,
+      },
+      causes: [
+        { ...analysis.causes[0]!, dimension: "Country", value: "United States", impact: -5291, counterfactual: 7062 },
+        { ...analysis.causes[1]!, dimension: "Product", value: "SaaS", impact: -1633, counterfactual: 3404 },
+      ],
+    };
+    const aggregateRows = aggregates();
+    let plan = planPeterQuestion(question, adjustedAnalysis, profiles, aggregateRows);
+    plan = planPeterQuestion(question, adjustedAnalysis, profiles, aggregateRows, rows);
+    const result = answerPeterQuery({ question, analysis: adjustedAnalysis, profiles, aggregates: aggregateRows, rows, plan });
+
+    expect(result.plan.intent).toBe("counterfactual");
+    expect(result.plan.dimension).toBe(dimension);
+    expect(result.evidence.items[0]?.value).toBe(value);
+    expect(result.answer).toContain(expectedCounterfactual.toLocaleString());
+    expect(result.answer).toContain("outlier-adjusted driver-card basis");
+    expect(result.answer).toContain("1,771");
+    expect(result.answer).not.toContain("9,761");
+  });
+
   it("grounds a recommendation in data-backed negative dimension movements", () => {
     const result = ask("What should I fix first?");
 
