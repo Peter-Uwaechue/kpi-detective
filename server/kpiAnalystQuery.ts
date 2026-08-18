@@ -81,6 +81,7 @@ const readableDate = (value: string) => new Intl.DateTimeFormat(undefined, { mon
 
 const isSingleEventWording = (text: string) => /\b(?:(?:biggest|largest|highest|maximum)\s+(?:single|one)|(?:single|one)\s+(?:biggest|largest|highest|maximum))\b/.test(text) && /\b(?:event|record|transaction|row)\b/.test(text);
 const isSingularRankWording = (text: string) => /\b(?:which|what)\b.*\b(?:had|has|was|is)\s+(?:the\s+)?(?:most|biggest|largest|highest)\b/.test(text) || (/\b(?:(?:biggest|largest|highest|maximum)\s+(?:single|one)|(?:single|one)\s+(?:biggest|largest|highest|maximum))\b/.test(text) && !isSingleEventWording(text));
+const isFullHistoryRequest = (text: string) => /\b(?:entire|full|whole)\s+(?:dataset|history|import)\b|\bacross\s+(?:all|the)\s+(?:data|history|time)\b|\ball[-\s]?time\b|\b(?:biggest|largest|highest|most)\s+ever\b|\bsame\s+month\s+last\s+year\b|\byear[-\s]?over[-\s]?year\b|\byoy\b|\b(?:compare|comparison)\b.*\blast\s+year\b/.test(text);
 
 const topicForQuestion = (question: string): "top" | "compare" | "counterfactual" | "overlap" | "date_detail" | "recommend" | "aggregate" | "single_event" | "drilldown" | "explain" | "clarify" => {
   const text = normalise(question);
@@ -98,6 +99,7 @@ const topicForQuestion = (question: string): "top" | "compare" | "counterfactual
 };
 
 const planMatchesQuestionTopic = (question: string, plan: PeterQueryPlan) => {
+  if (plan.intent === "unsupported" && plan.reason === "full_history_scope_not_supported") return null;
   const topic = topicForQuestion(question);
   if (topic === "clarify") return "I’m not fully sure which analysis you want. Please name the comparison, ranking, explanation, overlap, counterfactual, or recommendation you need.";
   if (topic === "top" && !["top_n", "factor_rank"].includes(plan.intent)) return "Your question asks for a ranking, but the resolved query is not a ranking.";
@@ -241,6 +243,7 @@ export const planPeterQuestion = (question: string, analysis: KpiAnalysis, profi
   const exclusions = asksOther && entity ? [entity] : [];
   const asksMovement = /\bfactor\b|\bimpact\b|\baffected\b|\bchange\b|\bmoved?\b|\bmovement\b/.test(text);
   const rankBy: PeterQueryPlan["rankBy"] = asksMovement ? "absolute_change" : "current";
+  if (isFullHistoryRequest(text)) return { intent: "unsupported", dimension: null, entity: null, exclusions: [], limit: 0, rankBy: "current", needsRows: false, reason: "full_history_scope_not_supported" };
   if (asksDateDetail && !entity && !rows) return { intent: "date_detail", dimension: null, entity: null, exclusions: [], limit: 3, rankBy: "absolute_change", needsRows: true, reason: "resolve_date_scope_in_rows" };
   if (asksDateDetail && !entity) return { intent: "unsupported", dimension: null, entity: null, exclusions: [], limit: 0, rankBy: "current", needsRows: false, reason: "date_scope_not_found" };
   if (asksDateDetail) return { intent: "date_detail", dimension: mentionedFactor?.dimension ?? dimension, entity, exclusions: [], limit: 3, rankBy: "absolute_change", needsRows: true, reason: "date_detail_request" };
@@ -395,6 +398,7 @@ export const answerPeterQuery = (input: { question: string; analysis: KpiAnalysi
     if (plan.reason === "ai_entity_not_present") return unsupported("The named entity was not present in the cleaned data, so I will not substitute a different segment.");
     if (plan.reason === "overlap_scope_not_found") return askForClarification("I could not identify the named segment whose overlapping factors you want to examine.");
     if (plan.reason === "count_dimension_not_found") return unsupported("I could not find a usable company, customer, client, or employer field to count in this import.");
+    if (plan.reason === "full_history_scope_not_supported") return unsupported(`Peter’s comparison answers currently use ${previous} through ${current}, matching the headline KPI and driver cards. Full-history rankings and year-over-year comparisons are not available yet, so I will not substitute this two-period comparison for your request.`);
     return askForClarification("I could not confidently map this wording to a distinct data query.");
   }
   if (plan.intent === "aggregate") {

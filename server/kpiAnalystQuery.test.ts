@@ -302,6 +302,19 @@ describe("Ask Peter full-cleaned-data query service", () => {
     expect(result.answer).not.toContain("United States moved");
   });
 
+  it.each([
+    "Which company had the most layoffs across the entire dataset?",
+    "How does this month compare to the same month last year?",
+  ])("discloses the active comparison scope for unsupported historical request: %s", question => {
+    const result = ask(question);
+
+    expect(result.plan.intent).toBe("unsupported");
+    expect(result.plan.reason).toBe("full_history_scope_not_supported");
+    expect(result.answer).toContain("February 2023 through March 2023");
+    expect(result.answer).toContain("Full-history rankings and year-over-year comparisons are not available yet");
+    expect(result.evidence.items).toHaveLength(0);
+  });
+
   it("returns an honest limitation for external or predictive questions", () => {
     const result = ask("What will layoffs be next quarter?");
 
