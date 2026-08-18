@@ -206,6 +206,22 @@ const materialiseFactors = (totals: Iterable<{ dimension: string; value: string;
   return { ...item, impact, confidence: Math.round(Math.min(99, 65 + contribution * 34)) };
 });
 
+const factorsWithDisplayedDrivers = (factors: PeterFactor[], analysis: KpiAnalysis): PeterFactor[] => {
+  // Driver cards are the displayed source of truth for their named dimensions,
+  // particularly when outlier sensitivity has replaced the normal row aggregate.
+  const cardFactors = analysis.causes.map(cause => ({
+    dimension: cause.dimension,
+    value: cause.value,
+    previous: cause.previousValue,
+    current: cause.currentValue,
+    impact: cause.impact,
+    records: 0,
+    confidence: cause.confidence,
+  }));
+  const cardKeys = new Set(cardFactors.map(factor => `${normalise(factor.dimension)}\u0000${normalise(factor.value)}`));
+  return [...cardFactors, ...factors.filter(factor => !cardKeys.has(`${normalise(factor.dimension)}\u0000${normalise(factor.value)}`))];
+};
+
 const byCurrent = (left: PeterFactor, right: PeterFactor) => right.current - left.current || Math.abs(right.impact) - Math.abs(left.impact) || left.value.localeCompare(right.value);
 const byAbsoluteChange = (left: PeterFactor, right: PeterFactor) => Math.abs(right.impact) - Math.abs(left.impact) || left.dimension.localeCompare(right.dimension) || left.value.localeCompare(right.value);
 
@@ -220,7 +236,7 @@ const findMentionedFactor = (question: string, factors: PeterFactor[], dimension
 export const planPeterQuestion = (question: string, analysis: KpiAnalysis, profiles: ColumnProfile[], aggregates: PeterAggregate[], rows?: PeterImportRow[]): PeterQueryPlan => {
   const text = normalise(question);
   const dimensions = eligibleDimensions(profiles).filter(dimension => dimension !== analysis.metric && dimension !== analysis.dateColumn);
-  const availableFactors = rows ? buildFactorsFromRows(rows, profiles, analysis) : buildFactorsFromAggregates(aggregates, profiles, analysis);
+  const availableFactors = factorsWithDisplayedDrivers(rows ? buildFactorsFromRows(rows, profiles, analysis) : buildFactorsFromAggregates(aggregates, profiles, analysis), analysis);
   const dimension = resolveDimension(text, dimensions);
   const mentionedFactor = findMentionedFactor(question, availableFactors);
   const entity = mentionedFactor?.value ?? null;
@@ -277,7 +293,7 @@ export const resolvePeterPlanWithAi = async (question: string, analysis: KpiAnal
   if (fallback.entity) return fallback;
   if (["overall_explain", "aggregate", "single_event", "top_n"].includes(fallback.intent)) return fallback;
   const dimensions = eligibleDimensions(profiles).filter(dimension => dimension !== analysis.metric && dimension !== analysis.dateColumn);
-  const factors = buildFactorsFromAggregates(aggregates, profiles, analysis);
+  const factors = factorsWithDisplayedDrivers(buildFactorsFromAggregates(aggregates, profiles, analysis), analysis);
   if (!dimensions.length) return fallback;
   try {
     const response = await Promise.race([
@@ -398,7 +414,7 @@ export const answerPeterQuery = (input: { question: string; analysis: KpiAnalysi
   const { question, analysis, profiles, aggregates, rows, plan } = input;
   const dimensions = eligibleDimensions(profiles).filter(dimension => dimension !== analysis.metric && dimension !== analysis.dateColumn);
   const source = rows ? "cleaned_rows" as const : "aggregates" as const;
-  const factors = rows ? buildFactorsFromRows(rows, profiles, analysis) : buildFactorsFromAggregates(aggregates, profiles, analysis);
+  const factors = factorsWithDisplayedDrivers(rows ? buildFactorsFromRows(rows, profiles, analysis) : buildFactorsFromAggregates(aggregates, profiles, analysis), analysis);
   const previous = longReadablePeriod(analysis.previousPeriod);
   const current = longReadablePeriod(analysis.currentPeriod);
   const unsupported = (reason: string): PeterAnswer => ({ answer: limitation(analysis, dimensions, reason), confidence: analysis.confidence, plan, evidence: { dimension: plan.dimension, items: [], exclusionApplied: plan.exclusions, source } });

@@ -44,9 +44,9 @@ const analysis: KpiAnalysis = {
   ],
 };
 
-const aggregates = (): PeterAggregate[] => {
+const aggregates = (source: PeterImportRow[] = rows): PeterAggregate[] => {
   const totals = new Map<string, PeterAggregate>();
-  rows.forEach(row => {
+  source.forEach(row => {
     const values = row.cleanedValues as Record<string, unknown>;
     const period = String(values.date).slice(0, 7);
     const metric = Number(values.total_laid_off);
@@ -105,6 +105,22 @@ const questionCases = (driver: (typeof drivers)[number]) => [
 ];
 
 describe("Ask Peter displayed-driver quality matrix", () => {
+  it("resolves Post IPO from the displayed driver card when active rows do not contain that stage", () => {
+    const question = "What would total layoff be if Post IPO stayed flat?";
+    const rowsWithoutPostIpo = rows.filter(row => (row.cleanedValues as Record<string, unknown>).Stage !== "Post IPO");
+    const aggregateRows = aggregates(rowsWithoutPostIpo);
+    let plan = planPeterQuestion(question, analysis, profiles, aggregateRows);
+    plan = planPeterQuestion(question, analysis, profiles, aggregateRows, rowsWithoutPostIpo);
+    const result = answerPeterQuery({ question, analysis, profiles, aggregates: aggregateRows, rows: rowsWithoutPostIpo, plan });
+
+    expect(result.plan.intent).toBe("counterfactual");
+    expect(result.plan.dimension).toBe("Stage");
+    expect(result.plan.entity).toBe("Post IPO");
+    expect(result.answer).toContain("Stage: Post IPO had stayed");
+    expect(result.answer).toContain("120");
+    expect(result.answer).not.toContain("Country: United States had stayed");
+  });
+
   it("refuses a manually mismatched Post IPO counterfactual plan instead of substituting United States", () => {
     const question = "What would total layoff be if Post IPO stayed flat?";
     const aggregateRows = aggregates();
