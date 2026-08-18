@@ -34,7 +34,7 @@ const DISCOUNT_TERMS = ["discount", "rebate", "markdown"];
 const TAX_TERMS = ["tax", "vat", "gst", "sales tax"];
 const DATE_TERMS = ["date", "day", "time", "month", "week", "created", "ordered", "purchased", "transaction"];
 const CATEGORY_TERMS = ["region", "state", "city", "location", "product", "category", "channel", "customer", "client", "company", "employer", "industry", "sector", "country", "nation", "stage", "segment", "store", "department", "brand", "type"];
-const IDENTIFIER_PATTERN = /\b(id|order|invoice|transaction|reference|sku|code)\b/i;
+const IDENTIFIER_PATTERN = /(?:^|[_\s-])(id|order|invoice|transaction|reference|sku|code)(?:$|[_\s-])|(?:invoice|order|transaction|reference|sku|stock|customer)(?:no|number|id|code)?$|(?:id|code|sku|reference)$/i;
 const CURRENCY_CODE_PATTERN = /\b(NGN|USD|EUR|GBP|CAD|AUD|ZAR|KES|GHS|AED|INR)\b/gi;
 
 type RawRecord = Record<string, unknown>;
@@ -192,8 +192,10 @@ const inferBaseProfiles = (headers: string[], samples: RawRecord[]): ColumnProfi
   const distinctRate = new Set(values.map(text)).size / values.length;
   const dateHint = headerScore(name, DATE_TERMS);
   const numericHint = headerScore(name, REVENUE_TERMS);
-  if (dateRate >= PROFILE_MIN_VALID_RATE && (dateHint > 0 || numericRate < 0.98)) return { name, kind: "date", confidence: Math.round(Math.min(99, dateRate * 88 + dateHint * 5)), datePreference: preference };
-  if (IDENTIFIER_PATTERN.test(name) || (distinctRate > 0.92 && values.length > 7 && /\d/.test(values.map(text).join("")) && numericHint === 0)) return { name, kind: "identifier", confidence: 82 };
+  const explicitIdentifier = IDENTIFIER_PATTERN.test(name);
+  if (!explicitIdentifier && dateRate >= PROFILE_MIN_VALID_RATE && (dateHint > 0 || numericRate < 0.98)) return { name, kind: "date", confidence: Math.round(Math.min(99, dateRate * 88 + dateHint * 5)), datePreference: preference };
+  const quantityHint = headerScore(name, QUANTITY_TERMS);
+  if (explicitIdentifier || (distinctRate > 0.92 && values.length > 7 && /\d/.test(values.map(text).join("")) && numericHint === 0 && quantityHint === 0)) return { name, kind: "identifier", confidence: 82 };
   const categoryHint = headerScore(name, CATEGORY_TERMS);
   if (categoryHint > 0 && numericHint === 0) return { name, kind: "category", confidence: Math.round(Math.min(95, 70 + categoryHint * 6)) };
   if (numericRate >= PROFILE_MIN_VALID_RATE) return { name, kind: "number", confidence: Math.round(Math.min(99, numericRate * 88 + numericHint * 5)) };

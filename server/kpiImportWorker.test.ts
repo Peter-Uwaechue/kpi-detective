@@ -164,3 +164,29 @@ describe("KPI import real-world data-shape matrix", () => {
     expect(logs[0]?.detail).toContain("Forecast");
   });
 });
+
+
+  it("profiles the exact invoice header shape with high-cardinality Quantity as a derived invoice KPI, not an identifier", () => {
+    const rows: RawRecord[] = Array.from({ length: 10 }, (_, index) => ({
+      InvoiceNo: `INV-${1000 + index}`,
+      StockCode: `SKU-${2000 + index}`,
+      Description: `Product ${index + 1}`,
+      Quantity: String(index + 1),
+      InvoiceDate: index % 3 === 0 ? `2026-05-${String(index + 1).padStart(2, "0")} 09:50:00` : index % 3 === 1 ? `${index + 1}-May-2026` : `${String(index + 1).padStart(2, "0")}/05/2026`,
+      UnitPrice: `£${(index + 1).toLocaleString("en-GB")}.50`,
+      CustomerID: String(10000 + index),
+      Country: "United Kingdom",
+    }));
+    const profiles = __kpiImportWorkerTesting.inferProfiles(Object.keys(rows[0]!), rows);
+    const metric = __kpiImportWorkerTesting.findMetric(profiles);
+    const date = __kpiImportWorkerTesting.findDate(profiles);
+    const quantity = profiles.find(profile => profile.name === "Quantity");
+    const cleaned = __kpiImportWorkerTesting.cleanRow(rows[9]!, profiles, stats());
+
+    expect(quantity).toMatchObject({ kind: "number" });
+    expect(profiles.find(profile => profile.name === "InvoiceNo")).toMatchObject({ kind: "identifier" });
+    expect(profiles.find(profile => profile.name === "CustomerID")).toMatchObject({ kind: "identifier" });
+    expect(date).toMatchObject({ name: "InvoiceDate", kind: "date", datePreference: "day-first" });
+    expect(metric).toMatchObject({ name: "__derived_amount__", metricRecipe: { kind: "quantity_times_price", quantityColumn: "Quantity", unitValueColumn: "UnitPrice" } });
+    expect(cleaned.cleanedValues.__derived_amount__).toBe(105);
+  });
