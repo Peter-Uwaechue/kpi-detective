@@ -27,7 +27,7 @@ const PROFILE_MIN_VALID_RATE = 0.75;
 const MAX_FUZZY_CATEGORY_VALUES = 400;
 const REVENUE_TERMS = ["revenue", "sales", "amount", "total", "value", "gmv", "income", "turnover", "net", "purchase", "spend", "price", "cost", "profit"];
 const DATE_TERMS = ["date", "day", "time", "month", "week", "created", "ordered", "purchased", "transaction"];
-const CATEGORY_TERMS = ["region", "state", "city", "location", "product", "category", "channel", "customer", "client", "segment", "store", "department", "brand", "type"];
+const CATEGORY_TERMS = ["region", "state", "city", "location", "product", "category", "channel", "customer", "client", "company", "employer", "industry", "sector", "country", "nation", "stage", "segment", "store", "department", "brand", "type"];
 const IDENTIFIER_PATTERN = /\b(id|order|invoice|transaction|reference|sku|code)\b/i;
 const CURRENCY_CODE_PATTERN = /\b(NGN|USD|EUR|GBP|CAD|AUD|ZAR|KES|GHS|AED|INR)\b/gi;
 
@@ -46,6 +46,7 @@ type WorkerStats = {
   numericChanges: number;
   categoryChanges: number;
   fuzzyCategoryMerges: number;
+  fuzzyCategoryRows: number;
   possibleDuplicates: number;
   outliers: number;
 };
@@ -204,7 +205,7 @@ export async function* streamRecords(fileName: string, stream: Readable): AsyncG
 
 const findMetric = (profiles: ColumnProfile[]) => profiles.filter(profile => profile.kind === "number").sort((a, b) => headerScore(b.name, REVENUE_TERMS) - headerScore(a.name, REVENUE_TERMS) || b.confidence - a.confidence)[0];
 const findDate = (profiles: ColumnProfile[]) => profiles.filter(profile => profile.kind === "date").sort((a, b) => headerScore(b.name, DATE_TERMS) - headerScore(a.name, DATE_TERMS) || b.confidence - a.confidence)[0];
-const normaliseCategory = (value: unknown) => title(normalise(value)) || UNKNOWN;
+const normaliseCategory = (value: unknown) => (value === null || value === undefined ? "" : String(value)).replace(/\u00a0/g, " ").replace(/\s+/g, " ").trim() || UNKNOWN;
 
 function cleanRow(row: RawRecord, profiles: ColumnProfile[], stats: WorkerStats) {
   const rawValues: RawRecord = { ...row };
@@ -234,7 +235,8 @@ function cleanRow(row: RawRecord, profiles: ColumnProfile[], stats: WorkerStats)
     if (profile.kind === "category") {
       const normalized = normaliseCategory(raw);
       cleanedValues[profile.name] = normalized;
-      if (normalized !== text(raw)) { stats.categoryChanges++; changes.push({ column: profile.name, from: raw, to: normalized, reason: "Standardised category casing and spacing" }); }
+      const rawCategory = raw === null || raw === undefined ? "" : String(raw).replace(/\u00a0/g, " ");
+      if (normalized !== rawCategory) { stats.categoryChanges++; changes.push({ column: profile.name, from: raw, to: normalized, reason: "Standardised category whitespace" }); }
       continue;
     }
     cleanedValues[profile.name] = text(raw);
@@ -331,12 +333,12 @@ function fullCauseImpact(aggregates: AnalysisAggregate[], metricColumn: string, 
 
 const logsFromStats = (stats: WorkerStats) => [
   { key: "duplicates", title: "Exact duplicates excluded", detail: "Exact cleaned-row duplicates are retained for review but excluded from the default calculation.", count: stats.exactDuplicates, severity: stats.exactDuplicates ? "success" : "info" },
-  { key: "possible", title: "Possible duplicates flagged", detail: "Rows sharing customer, date, and KPI value are kept for your decision.", count: stats.possibleDuplicates, severity: stats.possibleDuplicates ? "warning" : "info" },
-  { key: "fuzzy", title: "High-confidence category matches", detail: "Only aliases and near-identical category values above the high similarity threshold were merged.", count: stats.fuzzyCategoryMerges, severity: stats.fuzzyCategoryMerges ? "success" : "info" },
+  { key: "possible", title: "Possible duplicates flagged", detail: "Rows sharing a company or customer, date, and KPI value are kept for your decision.", count: stats.possibleDuplicates, severity: stats.possibleDuplicates ? "warning" : "info" },
+  { key: "fuzzy", title: "High-confidence category alias groups", detail: `${stats.fuzzyCategoryRows.toLocaleString()} individual category cells were reconciled across ${stats.fuzzyCategoryMerges.toLocaleString()} distinct alias group${stats.fuzzyCategoryMerges === 1 ? "" : "s"}.`, count: stats.fuzzyCategoryMerges, severity: stats.fuzzyCategoryMerges ? "success" : "info" },
   { key: "outliers", title: "Outliers flagged for review", detail: "IQR-based outlier flags never remove values automatically.", count: stats.outliers, severity: stats.outliers ? "warning" : "info" },
   { key: "dates", title: "Dates standardised", detail: "Recognisable mixed date formats were converted to ISO format.", count: stats.dateChanges, severity: "success" },
   { key: "numbers", title: "Numbers and currencies standardised", detail: "Currency symbols and supported currency codes were removed while retaining numeric values.", count: stats.numericChanges, severity: "success" },
-  { key: "categories", title: "Category values standardised", detail: "Category casing and spacing were normalised during import.", count: stats.categoryChanges, severity: "success" },
+  { key: "categories", title: "Category whitespace standardised", detail: "Count of individual category cells changed only to trim or collapse whitespace. Alias reconciliation is reported separately above.", count: stats.categoryChanges, severity: "success" },
   { key: "invalid", title: "Invalid numeric values flagged", detail: "Invalid numeric values remain visible but do not affect the selected KPI.", count: stats.invalidNumeric, severity: stats.invalidNumeric ? "warning" : "info" },
   { key: "missing", title: "Missing numeric values flagged", detail: "Missing numeric values remain visible but do not affect the selected KPI.", count: stats.missingNumeric, severity: stats.missingNumeric ? "warning" : "info" },
 ];
@@ -366,6 +368,8 @@ const knownCategoryAlias = (value: string, column: string) => {
     if (["eastcoast", "ecoast"].includes(compact)) return "East Coast";
     if (["westcoast", "wcoast"].includes(compact)) return "West Coast";
   }
+  if (/(country|nation|market)/.test(columnName) && compact === "unitedstates") return "United States";
+  if (/(industry|sector)/.test(columnName) && ["crypto", "cryptocurrency"].includes(compact)) return "Crypto";
   if (/(channel|source|platform|medium)/.test(columnName)) {
     if (["online", "web", "website", "webstore", "ecommerce", "ecommercewebsite"].includes(compact)) return "Online";
     if (["instore", "retailstore", "physicalstore", "store"].includes(compact)) return "In Store";
@@ -409,6 +413,7 @@ async function persistReviewRows(importId: string, rows: ReviewRow[]) {
 
 function applyFuzzyCategoryReview(rows: ReviewRow[], profiles: ColumnProfile[], stats: WorkerStats) {
   const changedRows = new Set<number>();
+  const aliasGroups = new Set<string>();
   const categoryProfiles = profiles.filter(profile => profile.kind === "category");
   for (const profile of categoryProfiles) {
     const frequency = new Map<string, number>();
@@ -435,10 +440,12 @@ function applyFuzzyCategoryReview(rows: ReviewRow[], profiles: ColumnProfile[], 
       row.cleanedValues[profile.name] = replacement;
       row.rowSignature = signatureFor(row.cleanedValues);
       row.changes.push({ column: profile.name, from: current, to: replacement, reason: "Merged a high-confidence near-duplicate category" });
-      stats.fuzzyCategoryMerges++;
+      stats.fuzzyCategoryRows++;
+      aliasGroups.add(`${profile.name}\u0000${replacement}`);
       changedRows.add(row.rowNumber);
     });
   }
+  stats.fuzzyCategoryMerges = aliasGroups.size;
   return changedRows;
 }
 
@@ -446,9 +453,10 @@ function applyPossibleDuplicateReview(rows: ReviewRow[], profiles: ColumnProfile
   const changedRows = new Set<number>();
   const date = findDate(profiles);
   const metric = findMetric(profiles);
-  const customer = profiles.find(profile => (profile.kind === "category" || profile.kind === "identifier") && /customer|client/i.test(profile.name));
+  const customer = profiles.find(profile => (profile.kind === "category" || profile.kind === "identifier") && /company|customer|client|employer|organisation|organization/i.test(profile.name));
   if (!date || !metric || !customer) return changedRows;
   const firstByKey = new Map<string, ReviewRow>();
+  const entityLabel = normalise(customer.name);
   rows.filter(row => !row.excluded).forEach(row => {
     const dateValue = row.cleanedValues[date.name];
     const metricValue = row.cleanedValues[metric.name];
@@ -461,8 +469,8 @@ function applyPossibleDuplicateReview(rows: ReviewRow[], profiles: ColumnProfile
     first.possibleDuplicate = true;
     changedRows.add(row.rowNumber);
     changedRows.add(first.rowNumber);
-    appendIssue(row, { type: "possible-duplicate", message: `Shares customer, date, and amount with row ${first.rowNumber}; kept for your review.` });
-    appendIssue(first, { type: "possible-duplicate", message: `Shares customer, date, and amount with row ${row.rowNumber}; kept for your review.` });
+    appendIssue(row, { type: "possible-duplicate", message: `Shares ${entityLabel}, date, and KPI value with row ${first.rowNumber}; kept for your review.` });
+    appendIssue(first, { type: "possible-duplicate", message: `Shares ${entityLabel}, date, and KPI value with row ${row.rowNumber}; kept for your review.` });
   });
   stats.possibleDuplicates = rows.filter(row => row.possibleDuplicate).length;
   return changedRows;
@@ -526,8 +534,9 @@ async function recalculateFromStoredRows(importId: string, profiles: ColumnProfi
     invalidNumeric: rows.flatMap(row => row.issues).filter(issue => issue.type === "invalid-number").length,
     dateChanges: rows.flatMap(row => row.changes).filter(change => change.reason === "Standardised date").length,
     numericChanges: rows.flatMap(row => row.changes).filter(change => change.reason === "Standardised numeric or currency value").length,
-    categoryChanges: rows.flatMap(row => row.changes).filter(change => change.reason === "Standardised category casing and spacing").length,
-    fuzzyCategoryMerges: rows.flatMap(row => row.changes).filter(change => change.reason === "Merged a high-confidence near-duplicate category").length,
+    categoryChanges: rows.flatMap(row => row.changes).filter(change => change.reason === "Standardised category whitespace").length,
+    fuzzyCategoryMerges: new Set(rows.flatMap(row => row.changes).filter(change => change.reason === "Merged a high-confidence near-duplicate category").map(change => `${change.column}\u0000${String(change.to)}`)).size,
+    fuzzyCategoryRows: rows.flatMap(row => row.changes).filter(change => change.reason === "Merged a high-confidence near-duplicate category").length,
     possibleDuplicates: rows.filter(row => row.possibleDuplicate).length,
     outliers: rows.filter(row => row.isOutlier).length,
   };
@@ -590,7 +599,7 @@ export async function processKpiImport(importId: string, options: { claimed?: bo
   const date = findDate(profiles);
   if (!metric || !date) throw new Error("We could not identify both a reliable date column and numeric KPI. Ensure the columns contain mostly valid dates and amounts, even if a few cells contain placeholders such as TBD or cash.");
   await updateKpiImport(importId, { status: "ingesting", columnsJson: profiles, workerCheckpointJson: { phase: "ingesting", batchSize: BATCH_SIZE } });
-  const stats: WorkerStats = { sourceRows: 0, usableRows: 0, exactDuplicates: 0, missingNumeric: 0, invalidNumeric: 0, dateChanges: 0, numericChanges: 0, categoryChanges: 0, fuzzyCategoryMerges: 0, possibleDuplicates: 0, outliers: 0 };
+  const stats: WorkerStats = { sourceRows: 0, usableRows: 0, exactDuplicates: 0, missingNumeric: 0, invalidNumeric: 0, dateChanges: 0, numericChanges: 0, categoryChanges: 0, fuzzyCategoryMerges: 0, fuzzyCategoryRows: 0, possibleDuplicates: 0, outliers: 0 };
   let rows: ReviewRow[] = [];
   const flush = async () => {
     const payloads = rows.map(payloadFor);
@@ -694,5 +703,14 @@ async function runWorker() {
     await new Promise(resolve => setTimeout(resolve, interval));
   }
 }
+
+export const __kpiImportWorkerTesting = {
+  inferProfiles,
+  cleanRow,
+  applyFuzzyCategoryReview,
+  applyPossibleDuplicateReview,
+  logsFromStats,
+  signatureFor,
+};
 
 if (process.env.KPI_IMPORT_WORKER_MODE === "1") runWorker().catch(error => { console.error(error); process.exit(1); });
