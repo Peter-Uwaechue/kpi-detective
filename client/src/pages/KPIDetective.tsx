@@ -177,7 +177,7 @@ function ChatPanel({ analysis, dataset, importId }: { analysis: KpiAnalysis; dat
   const [question, setQuestion] = useState("");
   const [isSending, setIsSending] = useState(false);
   const [askedSuggestions, setAskedSuggestions] = useState<string[]>([]);
-  const [messages, setMessages] = useState<ChatMessage[]>([{ id: "welcome", role: "assistant", text: `I have investigated the ${analysis.metricLabel.toLowerCase()} change. Ask why a segment shifted, which customer contributed, or what the KPI would have been without a driver.`, confidence: analysis.confidence }]);
+  const [messages, setMessages] = useState<ChatMessage[]>([{ id: "welcome", role: "assistant", text: `Peter’s analysis found a change in ${analysis.metricLabel.toLowerCase()}. Ask why a segment shifted, which customer contributed, or what the KPI would have been without a driver.`, confidence: analysis.confidence }]);
   const ask = trpc.kpi.ask.useMutation();
   const askImport = trpc.kpi.askImport.useMutation();
   const primaryDriver = analysis.causes[0]?.value ?? "the leading driver";
@@ -196,7 +196,7 @@ function ChatPanel({ analysis, dataset, importId }: { analysis: KpiAnalysis; dat
     const text = (customQuestion ?? question).trim();
     if (!text || isSending) return;
     const userMessage: ChatMessage = { id: `user-${Date.now()}`, role: "user", text };
-    const local = dataset ? answerDataQuestion(text, dataset, analysis) : { answer: "I’m checking the backend analysis for that question…", confidence: analysis.confidence };
+    const local = dataset ? answerDataQuestion(text, dataset, analysis) : { answer: "Peter is preparing an answer from the backend analysis…", confidence: analysis.confidence };
     const answerId = `assistant-${Date.now()}`;
     const context = {
       metricLabel: analysis.metricLabel,
@@ -227,7 +227,7 @@ function ChatPanel({ analysis, dataset, importId }: { analysis: KpiAnalysis; dat
       setIsSending(false);
     }
   };
-  return <section className="chat-panel"><div className="chat-heading"><div className="chat-orb"><Bot size={20} /></div><div><span className="eyebrow">Ask the analyst</span><h2>Keep investigating</h2></div><span className="context-chip"><LockKeyhole size={13} />{importId ? "Private import evidence" : "Aggregated context only"}</span></div><div className="chat-messages">{messages.map(message => <div className={`chat-message ${message.role} ${message.failed ? "is-error" : ""}`} key={message.id}><div className="message-avatar">{message.role === "assistant" ? <Sparkles size={15} /> : "You"}</div><div><p>{message.text}</p>{message.confidence !== undefined && <small>{message.generated ? "AI answer grounded in KPI context" : "Calculated confidence"}: {message.confidence}%</small>}</div></div>)}</div><div className="chat-suggestions">{suggestions.map(suggestion => <button key={suggestion} onClick={() => void send(suggestion)} disabled={isSending}>{suggestion}<ChevronRight size={14} /></button>)}</div><form className="chat-input" onSubmit={event => { event.preventDefault(); void send(); }}><input value={question} onChange={event => setQuestion(event.target.value)} placeholder="Ask anything about your data" aria-label="Ask anything about your data" disabled={isSending} /><button type="submit" disabled={!question.trim() || isSending}>{isSending ? <Loader2 className="spin" size={17} /> : <Send size={17} />}</button></form></section>;
+  return <section className="chat-panel"><div className="chat-heading"><div className="chat-orb"><Bot size={20} /></div><div><span className="eyebrow">Ask Peter the Analyst</span><h2>Keep investigating with Peter</h2></div><span className="context-chip"><LockKeyhole size={13} />{importId ? "Private import evidence" : "Aggregated context only"}</span></div><div className="chat-messages">{messages.map(message => <div className={`chat-message ${message.role} ${message.failed ? "is-error" : ""}`} key={message.id}><div className="message-avatar">{message.role === "assistant" ? <Sparkles size={15} /> : "You"}</div><div><p>{message.text}</p>{message.confidence !== undefined && <small>{message.generated ? "Peter’s AI answer grounded in KPI context" : "Calculated confidence"}: {message.confidence}%</small>}</div></div>)}</div><div className="chat-suggestions">{suggestions.map(suggestion => <button key={suggestion} onClick={() => void send(suggestion)} disabled={isSending}>{suggestion}<ChevronRight size={14} /></button>)}</div><form className="chat-input" onSubmit={event => { event.preventDefault(); void send(); }}><input value={question} onChange={event => setQuestion(event.target.value)} placeholder="Ask Peter about your data" aria-label="Ask Peter about your data" disabled={isSending} /><button type="submit" disabled={!question.trim() || isSending}>{isSending ? <Loader2 className="spin" size={17} /> : <Send size={17} />}</button></form></section>;
 }
 
 export default function KPIDetective() {
