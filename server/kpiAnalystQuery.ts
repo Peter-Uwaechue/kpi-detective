@@ -225,20 +225,34 @@ const factorsWithDisplayedDrivers = (factors: PeterFactor[], analysis: KpiAnalys
 const byCurrent = (left: PeterFactor, right: PeterFactor) => right.current - left.current || Math.abs(right.impact) - Math.abs(left.impact) || left.value.localeCompare(right.value);
 const byAbsoluteChange = (left: PeterFactor, right: PeterFactor) => Math.abs(right.impact) - Math.abs(left.impact) || left.dimension.localeCompare(right.dimension) || left.value.localeCompare(right.value);
 
-const findMentionedFactor = (question: string, factors: PeterFactor[], dimension: string | null = null) => {
-  const text = normalise(question);
-  return [...factors]
+const entityKey = (value: string) => normalise(value).replace(/[^a-z0-9]+/g, "");
+
+type MentionedFactorMatch = { factor: PeterFactor | null; ambiguous: boolean };
+
+const findMentionedFactorMatch = (question: string, factors: PeterFactor[], dimension: string | null = null): MentionedFactorMatch => {
+  const questionKey = entityKey(question);
+  const matches = factors
     .filter(factor => !dimension || factor.dimension === dimension)
-    .sort((left, right) => right.value.length - left.value.length)
-    .find(factor => text.includes(normalise(factor.value))) ?? null;
+    .map(factor => ({ factor, key: entityKey(factor.value) }))
+    .filter(({ key }) => key.length >= 3 && questionKey.includes(key))
+    .sort((left, right) => right.key.length - left.key.length || left.factor.dimension.localeCompare(right.factor.dimension) || left.factor.value.localeCompare(right.factor.value));
+  if (!matches.length) return { factor: null, ambiguous: false };
+  const strongestLength = matches[0]!.key.length;
+  const strongest = matches.filter(match => match.key.length === strongestLength);
+  const identity = new Set(strongest.map(match => `${normalise(match.factor.dimension)}\u0000${match.key}`));
+  if (identity.size > 1) return { factor: null, ambiguous: true };
+  return { factor: strongest[0]!.factor, ambiguous: false };
 };
+
+const findMentionedFactor = (question: string, factors: PeterFactor[], dimension: string | null = null) => findMentionedFactorMatch(question, factors, dimension).factor;
 
 export const planPeterQuestion = (question: string, analysis: KpiAnalysis, profiles: ColumnProfile[], aggregates: PeterAggregate[], rows?: PeterImportRow[]): PeterQueryPlan => {
   const text = normalise(question);
   const dimensions = eligibleDimensions(profiles).filter(dimension => dimension !== analysis.metric && dimension !== analysis.dateColumn);
   const availableFactors = factorsWithDisplayedDrivers(rows ? buildFactorsFromRows(rows, profiles, analysis) : buildFactorsFromAggregates(aggregates, profiles, analysis), analysis);
   const dimension = resolveDimension(text, dimensions);
-  const mentionedFactor = findMentionedFactor(question, availableFactors);
+  const mentionedMatch = findMentionedFactorMatch(question, availableFactors);
+  const mentionedFactor = mentionedMatch.factor;
   const entity = mentionedFactor?.value ?? null;
   const asksTop = /\btop\b|\bhighest\b|\blargest\b|\bbiggest\b|\brank(?:ed|ing)?\b/.test(text) || isSingularRankWording(text);
   const asksOther = /\baside\b|\bbesides\b|\bother\b|\bexcluding\b|\bexcept\b|\bafter\b/.test(text);
@@ -259,6 +273,7 @@ export const planPeterQuestion = (question: string, analysis: KpiAnalysis, profi
   const exclusions = asksOther && entity ? [entity] : [];
   const asksMovement = /\bfactor\b|\bimpact\b|\baffected\b|\bchange\b|\bmoved?\b|\bmovement\b/.test(text);
   const rankBy: PeterQueryPlan["rankBy"] = asksMovement ? "absolute_change" : "current";
+  if (mentionedMatch.ambiguous && !dimension) return { intent: "unsupported", dimension: null, entity: null, exclusions: [], limit: 0, rankBy: "current", needsRows: false, reason: "ambiguous_entity_across_dimensions" };
   if (isFullHistoryRequest(text)) return { intent: "unsupported", dimension: null, entity: null, exclusions: [], limit: 0, rankBy: "current", needsRows: false, reason: "full_history_scope_not_supported" };
   if (asksDateDetail && !entity && !rows) return { intent: "date_detail", dimension: null, entity: null, exclusions: [], limit: 3, rankBy: "absolute_change", needsRows: true, reason: "resolve_date_scope_in_rows" };
   if (asksDateDetail && !entity) return { intent: "unsupported", dimension: null, entity: null, exclusions: [], limit: 0, rankBy: "current", needsRows: false, reason: "date_scope_not_found" };
@@ -433,6 +448,7 @@ export const answerPeterQuery = (input: { question: string; analysis: KpiAnalysi
     if (plan.reason === "ai_entity_not_present") return unsupported("The named entity was not present in the cleaned data, so I will not substitute a different segment.");
     if (plan.reason === "overlap_scope_not_found") return askForClarification("I could not identify the named segment whose overlapping factors you want to examine.");
     if (plan.reason === "count_dimension_not_found") return unsupported("I could not find a usable company, customer, client, or employer field to count in this import.");
+    if (plan.reason === "ambiguous_entity_across_dimensions") return askForClarification("The named value exists in more than one dimension. Please specify the dimension, such as country, stage, location, or industry, so I do not choose one arbitrarily.");
     if (plan.reason === "full_history_scope_not_supported") return unsupported(`Peter’s comparison answers currently use ${previous} through ${current}, matching the headline KPI and driver cards. Full-history rankings and year-over-year comparisons are not available yet, so I will not substitute this two-period comparison for your request.`);
     return askForClarification("I could not confidently map this wording to a distinct data query.");
   }

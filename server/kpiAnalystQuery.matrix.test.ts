@@ -105,6 +105,39 @@ const questionCases = (driver: (typeof drivers)[number]) => [
 ];
 
 describe("Ask Peter displayed-driver quality matrix", () => {
+  it.each([
+    ["What if United States stayed flat?", "Country", "United States"],
+    ["What if Post IPO stayed flat?", "Stage", "Post IPO"],
+    ["What if Post-IPO stayed flat?", "Stage", "Post IPO"],
+    ["What if SF Bay Area stayed flat?", "Location", "SF Bay Area"],
+    ["What if Transportation stayed flat?", "Industry", "Transportation"],
+  ])("resolves an unlabelled value across dimensions: %s", (question, dimension, value) => {
+    const result = ask(question);
+
+    expect(result.plan.intent).toBe("counterfactual");
+    expect(result.plan.dimension).toBe(dimension);
+    expect(result.plan.entity).toBe(value);
+    expect(result.answer).toContain(`${dimension}: ${value} had stayed`);
+  });
+
+  it("asks for clarification instead of choosing arbitrarily when an unlabelled value exists in multiple dimensions", () => {
+    const ambiguousAnalysis: KpiAnalysis = {
+      ...analysis,
+      causes: [
+        { ...analysis.causes[0]!, dimension: "Country", value: "Georgia" },
+        { ...analysis.causes[1]!, dimension: "Location", value: "Georgia" },
+      ],
+    };
+    const question = "What if Georgia stayed flat?";
+    const aggregateRows = aggregates();
+    const plan = planPeterQuestion(question, ambiguousAnalysis, profiles, aggregateRows);
+    const result = answerPeterQuery({ question, analysis: ambiguousAnalysis, profiles, aggregates: aggregateRows, plan });
+
+    expect(plan.intent).toBe("unsupported");
+    expect(plan.reason).toBe("ambiguous_entity_across_dimensions");
+    expect(result.answer).toContain("Please specify the dimension");
+  });
+
   it("resolves Post IPO from the displayed driver card when active rows do not contain that stage", () => {
     const question = "What would total layoff be if Post IPO stayed flat?";
     const rowsWithoutPostIpo = rows.filter(row => (row.cleanedValues as Record<string, unknown>).Stage !== "Post IPO");
