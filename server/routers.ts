@@ -1,10 +1,12 @@
 import { COOKIE_NAME } from "@shared/const";
 import { z } from "zod";
 import { createCandidateReferral } from "./db";
-import { createKpiImport, getKpiImport, getPreviewPage, resetKpiImportData, updateKpiImport } from "./kpiImportDb";
+import { createKpiImport, getAllImportRows, getKpiImport, getPreviewPage, resetKpiImportData, updateKpiImport } from "./kpiImportDb";
 import { createImportUploadUrl, getImportObjectInfo } from "./kpiImportStorage";
 import { applyImportReviewAction, processKpiImport, recalculateKpiImport } from "./kpiImportWorker";
 import { invokeLLM } from "./_core/llm";
+import { answerImportQuestion, buildImportAnalystEvidence, fallbackAnalystAnswer, type AnalystContext } from "./kpiAnalyst";
+import type { KpiAnalysis } from "../shared/kpiEngine";
 import { getSessionCookieOptions } from "./_core/cookies";
 import { notifyOwner } from "./_core/notification";
 import { systemRouter } from "./_core/systemRouter";
@@ -34,33 +36,26 @@ const validCvFile = (buffer: Buffer, mimeType: (typeof cvMimeTypes)[number]) => 
 
 const safeFileName = (name: string) => name.replace(/[^a-zA-Z0-9._-]/g, "-").replace(/-+/g, "-").slice(0, 180);
 
-type AnalystContext = {
-  metricLabel: string;
-  summary: string;
-  previousPeriod: string;
-  currentPeriod: string;
-  currencySymbol: string;
-  confidence: number;
-  causes: Array<{ dimension: string; value: string; impact: number; counterfactual: number; confidence: number }>;
-};
+const analystContextInput = z.object({
+  metricLabel: z.string().max(160),
+  summary: z.string().max(2200),
+  previousPeriod: z.string().max(40),
+  currentPeriod: z.string().max(40),
+  currencySymbol: z.string().max(4),
+  confidence: z.number().min(0).max(100),
+  causes: z.array(z.object({
+    dimension: z.string().max(160),
+    value: z.string().max(260),
+    impact: z.number(),
+    counterfactual: z.number(),
+    confidence: z.number().min(0).max(100),
+  })).max(5),
+});
 
-const formatAnalystMetric = (value: number, symbol: string) => `${value < 0 ? "−" : value > 0 ? "+" : ""}${symbol}${Math.abs(value).toLocaleString(undefined, { maximumFractionDigits: 0 })}`;
-
-const fallbackAnalystAnswer = (question: string, context: AnalystContext) => {
-  const normalizedQuestion = question.toLowerCase();
-  const causes = [...context.causes].sort((left, right) => Math.abs(right.impact) - Math.abs(left.impact));
-  const matchedCause = causes.find(cause => normalizedQuestion.includes(cause.value.toLowerCase()));
-  const cause = matchedCause ?? causes[0];
-  if (cause && /what if|stayed flat|flat/.test(normalizedQuestion)) {
-    return `If ${cause.dimension}: ${cause.value} had stayed at its ${context.previousPeriod} level, ${context.metricLabel.toLowerCase()} would have been about ${formatAnalystMetric(cause.counterfactual, context.currencySymbol)} in ${context.currentPeriod}. This is based on its measured impact of ${formatAnalystMetric(cause.impact, context.currencySymbol)}.`;
-  }
-  if (matchedCause) {
-    return `The clearest displayed explanation is ${matchedCause.dimension}: ${matchedCause.value}, with an impact of ${formatAnalystMetric(matchedCause.impact, context.currencySymbol)} from ${context.previousPeriod} to ${context.currentPeriod}. This is an independent factor-level comparison, with ${matchedCause.confidence}% confidence.`;
-  }
-  if (/customer/.test(normalizedQuestion) && !causes.some(cause => /customer|client/i.test(cause.dimension))) {
-    return `The supplied analysis context does not include a customer-level driver. ${context.summary}`;
-  }
-  return context.summary;
+const validImportedAnalysis = (value: unknown): value is KpiAnalysis => {
+  if (!value || typeof value !== "object") return false;
+  const analysis = value as Partial<KpiAnalysis>;
+  return typeof analysis.metric === "string" && typeof analysis.dateColumn === "string" && typeof analysis.previousPeriod === "string" && typeof analysis.currentPeriod === "string" && Array.isArray(analysis.causes);
 };
 
 export const appRouter = router({
@@ -173,21 +168,7 @@ export const appRouter = router({
   kpi: router({
     ask: publicProcedure.input(z.object({
       question: z.string().trim().min(2).max(500),
-      context: z.object({
-        metricLabel: z.string().max(160),
-        summary: z.string().max(2200),
-        previousPeriod: z.string().max(40),
-        currentPeriod: z.string().max(40),
-        currencySymbol: z.string().max(4),
-        confidence: z.number().min(0).max(100),
-        causes: z.array(z.object({
-          dimension: z.string().max(160),
-          value: z.string().max(260),
-          impact: z.number(),
-          counterfactual: z.number(),
-          confidence: z.number().min(0).max(100),
-        })).max(5),
-      }),
+      context: analystContextInput,
     })).mutation(async ({ input }) => {
       const factSheet = JSON.stringify(input.context);
       try {
@@ -216,10 +197,26 @@ export const appRouter = router({
       } catch (error) {
         console.warn("[KPI Detective] Analyst fallback used:", error);
         return {
-          answer: fallbackAnalystAnswer(input.question, input.context),
+          answer: fallbackAnalystAnswer(input.question, input.context as AnalystContext),
           generated: false,
         };
       }
+    }),
+    askImport: protectedProcedure.input(z.object({
+      importId: z.string().uuid(),
+      question: z.string().trim().min(2).max(500),
+    })).mutation(async ({ input, ctx }) => {
+      const job = await getKpiImport(input.importId, ctx.user.openId);
+      if (!job) throw new Error("Import job was not found.");
+      if (!validImportedAnalysis(job.analysisJson)) throw new Error("This import does not yet have a complete analysis.");
+      const analysis = job.analysisJson;
+      const rows = await getAllImportRows(input.importId);
+      const evidence = buildImportAnalystEvidence(input.question, analysis, rows);
+      return {
+        answer: answerImportQuestion(input.question, analysis, evidence),
+        generated: false,
+        confidence: evidence.focus?.confidence ?? analysis.confidence,
+      };
     }),
   }),
   referrals: router({
