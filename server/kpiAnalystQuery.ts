@@ -79,14 +79,17 @@ const ordinal = (value: number) => {
 const pluralise = (value: string, count: number) => count === 1 ? value : value.endsWith("y") ? `${value.slice(0, -1)}ies` : `${value}s`;
 const readableDate = (value: string) => new Intl.DateTimeFormat(undefined, { month: "long", day: "numeric", year: "numeric", timeZone: "UTC" }).format(new Date(`${value}T00:00:00Z`));
 
+const isSingleEventWording = (text: string) => /\b(?:(?:biggest|largest|highest|maximum)\s+(?:single|one)|(?:single|one)\s+(?:biggest|largest|highest|maximum))\b/.test(text) && /\b(?:event|record|transaction|row)\b/.test(text);
+const isSingularRankWording = (text: string) => /\b(?:which|what)\b.*\b(?:had|has|was|is)\s+(?:the\s+)?(?:most|biggest|largest|highest)\b/.test(text) || (/\b(?:(?:biggest|largest|highest|maximum)\s+(?:single|one)|(?:single|one)\s+(?:biggest|largest|highest|maximum))\b/.test(text) && !isSingleEventWording(text));
+
 const topicForQuestion = (question: string): "top" | "compare" | "counterfactual" | "overlap" | "date_detail" | "recommend" | "aggregate" | "single_event" | "drilldown" | "explain" | "clarify" => {
   const text = normalise(question);
   if (/\boverlap\b|\bco-?occur(?:ring|rence)?\b|\btogether with\b/.test(text)) return "overlap";
   if (/\bdates?\b|\bdays?\b|\bwhen\b/.test(text)) return "date_detail";
-  if (/\b(?:(?:biggest|largest|highest|maximum)\s+(?:single|one)|(?:single|one)\s+(?:biggest|largest|highest|maximum))\b/.test(text)) return "single_event";
+  if (isSingleEventWording(text)) return "single_event";
   if (/\bhow many\b|\bnumber of\b|\btotal count\b|\bhow much\b/.test(text)) return "aggregate";
   if (/\baside\b|\bbesides\b|\bother\b|\bexcluding\b|\bexcept\b|\bafter\b/.test(text)) return "compare";
-  if (/\btop\b|\bhighest\b|\blargest\b|\bbiggest\b|\brank(?:ed|ing)?\b/.test(text)) return "top";
+  if (/\btop\b|\bhighest\b|\blargest\b|\bbiggest\b|\brank(?:ed|ing)?\b/.test(text) || isSingularRankWording(text)) return "top";
   if (/\bwhat if\b|\bstayed flat\b|\bwithout\b/.test(text)) return "counterfactual";
   if (/\bfix\b|\bpriority\b|\bprioritise\b|\bprioritize\b|\bwhat should\b|\bnext step\b|\bfocus on\b/.test(text)) return "recommend";
   if (/\bcompany\b|\bcompanies\b|\bcustomer\b|\bclient\b|\bemployer\b|\brow\b|\brows\b|\btransaction\b/.test(text) && !/\bwhy\b|\bcause\b|\bexplain\b/.test(text)) return "drilldown";
@@ -123,6 +126,7 @@ const rankLimit = (question: string) => {
   const text = normalise(question);
   const numeric = text.match(/\btop\s+(\d+)\b|\b(\d+)(?:st|nd|rd|th)\s+(?:biggest|largest|highest|factor|driver)\b/);
   if (numeric) return Math.min(Math.max(Number(numeric[1] ?? numeric[2]), 1), 20);
+  if (isSingularRankWording(text)) return 1;
   const words: Record<string, number> = { one: 1, two: 2, three: 3, four: 4, five: 5, six: 6, seven: 7, eight: 8, nine: 9, ten: 10 };
   const found = Object.entries(words).find(([word]) => new RegExp(`\\btop\\s+${word}\\b|\\b${word}\\s+(?:biggest|largest|highest)`, "i").test(text));
   return found ? found[1] : 5;
@@ -218,7 +222,7 @@ export const planPeterQuestion = (question: string, analysis: KpiAnalysis, profi
   const dimension = resolveDimension(text, dimensions);
   const mentionedFactor = findMentionedFactor(question, availableFactors);
   const entity = mentionedFactor?.value ?? null;
-  const asksTop = /\btop\b|\bhighest\b|\blargest\b|\bbiggest\b|\brank(?:ed|ing)?\b/.test(text);
+  const asksTop = /\btop\b|\bhighest\b|\blargest\b|\bbiggest\b|\brank(?:ed|ing)?\b/.test(text) || isSingularRankWording(text);
   const asksOther = /\baside\b|\bbesides\b|\bother\b|\bexcluding\b|\bexcept\b|\bafter\b/.test(text);
   const asksExplicitTopList = /\btop\s+(?:\d+|one|two|three|four|five|six|seven|eight|nine|ten)\b/.test(text);
   const asksRecommendation = /\bfix\b|\bpriority\b|\bprioritise\b|\bprioritize\b|\bwhat should\b|\bnext step\b|\bfocus on\b/.test(text);
@@ -226,7 +230,7 @@ export const planPeterQuestion = (question: string, analysis: KpiAnalysis, profi
   const asksOverlap = /\boverlap\b|\bco-?occur(?:ring|rence)?\b|\btogether with\b/.test(text);
   const asksCounterfactual = /\bwhat if\b|\bstayed flat\b|\bwithout\b/.test(text);
   const asksCompanyOrRows = /\bcompany\b|\bcompanies\b|\bcustomer\b|\bclient\b|\bemployer\b|\brow\b|\brows\b|\btransaction\b/.test(text);
-  const asksSingleEvent = /\b(?:(?:biggest|largest|highest|maximum)\s+(?:single|one)|(?:single|one)\s+(?:biggest|largest|highest|maximum))\b/.test(text);
+  const asksSingleEvent = isSingleEventWording(text);
   const asksCount = /\bhow many\b|\bnumber of\b|\btotal count\b|\bhow much\b/.test(text);
   const companyDimension = dimensions.find(candidate => /company|customer|client|employer|organisation|organization/i.test(candidate)) ?? null;
   const asksEntityCount = /\bcompany\b|\bcompanies\b|\bcustomer\b|\bcustomers\b|\bclient\b|\bclients\b|\bemployer\b|\bemployers\b/.test(text);
@@ -243,8 +247,6 @@ export const planPeterQuestion = (question: string, analysis: KpiAnalysis, profi
   if (asksOverlap && !entity) return { intent: "unsupported", dimension: null, entity: null, exclusions: [], limit: 0, rankBy: "current", needsRows: false, reason: "overlap_scope_not_found" };
   if (asksOverlap) return { intent: "overlap", dimension: mentionedFactor?.dimension ?? dimension, entity, exclusions: [], limit: 5, rankBy: "absolute_change", needsRows: true, reason: "co_occurrence_request" };
   if (asksSingleEvent) return { intent: "single_event", dimension, entity: null, exclusions: [], limit: 1, rankBy: "current", needsRows: true, reason: "unscoped_largest_single_event" };
-  if (namedCompanyReference && !companyFactor && !rows) return { intent: "drilldown", dimension, entity: null, exclusions: [], limit: rankLimit(question), rankBy: "absolute_change", needsRows: true, reason: "resolve_named_company_in_rows" };
-  if (namedCompanyReference && !companyFactor) return { intent: "unsupported", dimension: null, entity: null, exclusions: [], limit: 0, rankBy: "current", needsRows: false, reason: "named_company_not_found" };
   if (asksCount) {
     const aggregation = asksEntityCount ? "distinct_count" : asksRowCount ? "row_count" : "metric_total";
     const countDimension = aggregation === "distinct_count" ? companyDimension : dimension;
@@ -252,8 +254,10 @@ export const planPeterQuestion = (question: string, analysis: KpiAnalysis, profi
     return { intent: "aggregate", dimension: countDimension, entity: null, exclusions: [], limit: 1, rankBy: "current", period: comparisonPeriodForQuestion(question, analysis), aggregation, needsRows: true, reason: "period_aggregation_request" };
   }
   if (asksOther && dimension && !asksExplicitTopList) return { intent: "compare", dimension, entity, exclusions, limit: 1, rankBy: "current", needsRows: !availableFactors.some(factor => factor.dimension === dimension) || Boolean(analysis.outlierSensitivity?.explanationChanged), reason: "excluded_entity_comparison" };
-  if (asksTop && dimension) return { intent: "top_n", dimension, entity, exclusions, limit: rankLimit(question), rankBy, needsRows: !availableFactors.some(factor => factor.dimension === dimension) || Boolean(analysis.outlierSensitivity?.explanationChanged), reason: "dimension_rank_request" };
+  if (asksTop && dimension) return { intent: "top_n", dimension, entity: null, exclusions, limit: rankLimit(question), rankBy, needsRows: !availableFactors.some(factor => factor.dimension === dimension) || Boolean(analysis.outlierSensitivity?.explanationChanged), reason: "dimension_rank_request" };
   if (asksTop) return { intent: "factor_rank", dimension: null, entity: null, exclusions: [], limit: rankLimit(question), rankBy: "absolute_change", needsRows: Boolean(analysis.outlierSensitivity?.explanationChanged), reason: "cross_dimension_factor_rank" };
+  if (namedCompanyReference && !companyFactor && !rows) return { intent: "drilldown", dimension, entity: null, exclusions: [], limit: rankLimit(question), rankBy: "absolute_change", needsRows: true, reason: "resolve_named_company_in_rows" };
+  if (namedCompanyReference && !companyFactor) return { intent: "unsupported", dimension: null, entity: null, exclusions: [], limit: 0, rankBy: "current", needsRows: false, reason: "named_company_not_found" };
   if (asksCounterfactual) return { intent: "counterfactual", dimension, entity, exclusions, limit: 1, rankBy: "absolute_change", needsRows: Boolean(analysis.outlierSensitivity?.explanationChanged), reason: "counterfactual_request" };
   if (asksRecommendation) return { intent: "recommend", dimension, entity, exclusions, limit: 3, rankBy: "absolute_change", needsRows: Boolean(analysis.outlierSensitivity?.explanationChanged), reason: "data_priority_request" };
   if (asksCompanyOrRows && entity && asksWhy && mentionedFactor?.dimension === dimension) return { intent: "explain", dimension, entity, exclusions, limit: 3, rankBy: "absolute_change", needsRows: true, reason: "named_company_explanation" };

@@ -30,18 +30,21 @@ const profiles: ColumnProfile[] = [
   { name: "Country", kind: "category", confidence: 100, nonEmptyCount: 8, validCount: 8 },
   { name: "Product", kind: "category", confidence: 100, nonEmptyCount: 8, validCount: 8 },
   { name: "Region", kind: "category", confidence: 100, nonEmptyCount: 8, validCount: 8 },
+  { name: "Industry", kind: "category", confidence: 100, nonEmptyCount: 8, validCount: 8 },
+  { name: "Stage", kind: "category", confidence: 100, nonEmptyCount: 8, validCount: 8 },
+  { name: "Location", kind: "category", confidence: 100, nonEmptyCount: 8, validCount: 8 },
   { name: "Company", kind: "identifier", confidence: 100, nonEmptyCount: 8, validCount: 8 },
 ];
 
 const rows: PeterImportRow[] = [
-  { excluded: false, isOutlier: false, cleanedValues: { date: "2023-02-03", total_laid_off: 700, Country: "United States", Product: "SaaS", Region: "West", Company: "Atlas Labs" } },
-  { excluded: false, isOutlier: false, cleanedValues: { date: "2023-02-13", total_laid_off: 300, Country: "United States", Product: "SaaS", Region: "West", Company: "Beacon Inc" } },
-  { excluded: false, isOutlier: false, cleanedValues: { date: "2023-02-06", total_laid_off: 800, Country: "Canada", Product: "Commerce", Region: "North", Company: "North Co" } },
-  { excluded: false, isOutlier: false, cleanedValues: { date: "2023-02-09", total_laid_off: 200, Country: "India", Product: "Fintech", Region: "South", Company: "East Co" } },
-  { excluded: false, isOutlier: false, cleanedValues: { date: "2023-03-03", total_laid_off: 200, Country: "United States", Product: "SaaS", Region: "West", Company: "Atlas Labs" } },
-  { excluded: false, isOutlier: false, cleanedValues: { date: "2023-03-13", total_laid_off: 400, Country: "United States", Product: "SaaS", Region: "West", Company: "Beacon Inc" } },
-  { excluded: false, isOutlier: false, cleanedValues: { date: "2023-03-06", total_laid_off: 500, Country: "Canada", Product: "Commerce", Region: "North", Company: "North Co" } },
-  { excluded: false, isOutlier: false, cleanedValues: { date: "2023-03-09", total_laid_off: 300, Country: "India", Product: "Fintech", Region: "South", Company: "East Co" } },
+  { excluded: false, isOutlier: false, cleanedValues: { date: "2023-02-03", total_laid_off: 700, Country: "United States", Product: "SaaS", Region: "West", Industry: "Software", Stage: "Growth", Location: "New York", Company: "Atlas Labs" } },
+  { excluded: false, isOutlier: false, cleanedValues: { date: "2023-02-13", total_laid_off: 300, Country: "United States", Product: "SaaS", Region: "West", Industry: "Software", Stage: "Growth", Location: "New York", Company: "Beacon Inc" } },
+  { excluded: false, isOutlier: false, cleanedValues: { date: "2023-02-06", total_laid_off: 800, Country: "Canada", Product: "Commerce", Region: "North", Industry: "Retail", Stage: "Scale", Location: "Toronto", Company: "North Co" } },
+  { excluded: false, isOutlier: false, cleanedValues: { date: "2023-02-09", total_laid_off: 200, Country: "India", Product: "Fintech", Region: "South", Industry: "Finance", Stage: "Seed", Location: "Mumbai", Company: "East Co" } },
+  { excluded: false, isOutlier: false, cleanedValues: { date: "2023-03-03", total_laid_off: 200, Country: "United States", Product: "SaaS", Region: "West", Industry: "Software", Stage: "Growth", Location: "New York", Company: "Atlas Labs" } },
+  { excluded: false, isOutlier: false, cleanedValues: { date: "2023-03-13", total_laid_off: 400, Country: "United States", Product: "SaaS", Region: "West", Industry: "Software", Stage: "Growth", Location: "New York", Company: "Beacon Inc" } },
+  { excluded: false, isOutlier: false, cleanedValues: { date: "2023-03-06", total_laid_off: 500, Country: "Canada", Product: "Commerce", Region: "North", Industry: "Retail", Stage: "Scale", Location: "Toronto", Company: "North Co" } },
+  { excluded: false, isOutlier: false, cleanedValues: { date: "2023-03-09", total_laid_off: 300, Country: "India", Product: "Fintech", Region: "South", Industry: "Finance", Stage: "Seed", Location: "Mumbai", Company: "East Co" } },
 ];
 
 const aggregates = (): PeterAggregate[] => {
@@ -128,8 +131,8 @@ describe("Ask Peter full-cleaned-data query service", () => {
     expect(result.evidence.source).toBe("cleaned_rows");
   });
 
-  it("finds the largest single company event across the full cleaned dataset without treating it as a named lookup", () => {
-    const result = ask("What was the biggest single company layoff in this data?");
+  it("finds the largest explicit single company event across the full cleaned dataset without treating it as a named lookup", () => {
+    const result = ask("What was the biggest single company layoff event in this data?");
 
     expect(result.plan.intent).toBe("single_event");
     expect(result.plan.entity).toBeNull();
@@ -138,6 +141,25 @@ describe("Ask Peter full-cleaned-data query service", () => {
     expect(result.evidence.items[0]?.value).toBe("North Co");
     expect(result.evidence.items[0]?.current).toBe(800);
     expect(result.evidence.source).toBe("cleaned_rows");
+  });
+
+  it.each([
+    ["Which country had the most layoffs overall?", "Country", "United States"],
+    ["Which industry had the most layoffs overall?", "Industry", "Software"],
+    ["What was the largest stage by layoffs?", "Stage", "Growth"],
+    ["Which location had the highest layoffs?", "Location", "New York"],
+    ["What was the biggest single company layoff in this data?", "Company", "North Co"],
+  ])("treats singular superlative wording as a top-one ranking for %s", (question, dimension, expectedValue) => {
+    const result = ask(question);
+
+    expect(result.plan.intent).toBe("top_n");
+    expect(result.plan.dimension).toBe(dimension);
+    expect(result.plan.limit).toBe(1);
+    expect(result.plan.entity).toBeNull();
+    expect(result.evidence.items).toHaveLength(1);
+    expect(result.evidence.items[0]?.value).toBe(expectedValue);
+    expect(result.answer).toContain("The top 1");
+    expect(result.answer).toContain(`only within ${dimension}`);
   });
 
   it("keeps the suggested why and counterfactual question behavior on the new service", () => {
