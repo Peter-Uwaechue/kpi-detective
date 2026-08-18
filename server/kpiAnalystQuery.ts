@@ -18,7 +18,7 @@ export type PeterAggregate = {
 
 type PeriodValues = { previous: number; current: number; impact: number; records: number };
 export type PeterFactor = PeriodValues & { dimension: string; value: string; confidence: number };
-export type PeterIntent = "top_n" | "factor_rank" | "compare" | "counterfactual" | "overlap" | "date_detail" | "explain" | "recommend" | "drilldown" | "unsupported";
+export type PeterIntent = "top_n" | "factor_rank" | "compare" | "counterfactual" | "overlap" | "date_detail" | "overall_explain" | "aggregate" | "explain" | "recommend" | "drilldown" | "unsupported";
 
 export type PeterQueryPlan = {
   intent: PeterIntent;
@@ -28,6 +28,8 @@ export type PeterQueryPlan = {
   limit: number;
   rankBy: "current" | "absolute_change";
   scope?: { dimension: string; value: string };
+  period?: string;
+  aggregation?: "distinct_count" | "row_count" | "metric_total";
   needsRows: boolean;
   reason: string;
 };
@@ -77,10 +79,11 @@ const ordinal = (value: number) => {
 const pluralise = (value: string, count: number) => count === 1 ? value : value.endsWith("y") ? `${value.slice(0, -1)}ies` : `${value}s`;
 const readableDate = (value: string) => new Intl.DateTimeFormat(undefined, { month: "long", day: "numeric", year: "numeric", timeZone: "UTC" }).format(new Date(`${value}T00:00:00Z`));
 
-const topicForQuestion = (question: string): "top" | "compare" | "counterfactual" | "overlap" | "date_detail" | "recommend" | "drilldown" | "explain" | "clarify" => {
+const topicForQuestion = (question: string): "top" | "compare" | "counterfactual" | "overlap" | "date_detail" | "recommend" | "aggregate" | "drilldown" | "explain" | "clarify" => {
   const text = normalise(question);
   if (/\boverlap\b|\bco-?occur(?:ring|rence)?\b|\btogether with\b/.test(text)) return "overlap";
   if (/\bdates?\b|\bdays?\b|\bwhen\b/.test(text)) return "date_detail";
+  if (/\bhow many\b|\bnumber of\b|\btotal count\b|\bhow much\b/.test(text)) return "aggregate";
   if (/\baside\b|\bbesides\b|\bother\b|\bexcluding\b|\bexcept\b|\bafter\b/.test(text)) return "compare";
   if (/\btop\b|\bhighest\b|\blargest\b|\bbiggest\b|\brank(?:ed|ing)?\b/.test(text)) return "top";
   if (/\bwhat if\b|\bstayed flat\b|\bwithout\b/.test(text)) return "counterfactual";
@@ -94,8 +97,25 @@ const planMatchesQuestionTopic = (question: string, plan: PeterQueryPlan) => {
   const topic = topicForQuestion(question);
   if (topic === "clarify") return "I’m not fully sure which analysis you want. Please name the comparison, ranking, explanation, overlap, counterfactual, or recommendation you need.";
   if (topic === "top" && !["top_n", "factor_rank"].includes(plan.intent)) return "Your question asks for a ranking, but the resolved query is not a ranking.";
+  if (topic === "explain" && ["explain", "overall_explain"].includes(plan.intent)) return null;
   if (topic !== "top" && topic !== plan.intent) return `Your question asks for ${topic}, but the resolved query is ${plan.intent}.`;
   return null;
+};
+
+const comparisonPeriodForQuestion = (question: string, analysis: KpiAnalysis) => {
+  const text = normalise(question);
+  const candidates = [analysis.previousPeriod, analysis.currentPeriod];
+  const matched = candidates.find(period => {
+    const date = new Date(`${period}-01T00:00:00Z`);
+    const month = new Intl.DateTimeFormat("en", { month: "long", timeZone: "UTC" }).format(date).toLocaleLowerCase();
+    const shortMonth = new Intl.DateTimeFormat("en", { month: "short", timeZone: "UTC" }).format(date).toLocaleLowerCase();
+    const year = period.slice(0, 4);
+    return text.includes(period) || new RegExp(`\\b(?:${month}|${shortMonth})(?:\\s+${year})?\\b`, "i").test(text);
+  });
+  if (matched) return matched;
+  if (/\b(previous|prior|last)\s+(?:month|period)\b/.test(text)) return analysis.previousPeriod;
+  if (/\b(current|this)\s+(?:month|period)\b/.test(text)) return analysis.currentPeriod;
+  return analysis.currentPeriod;
 };
 
 const rankLimit = (question: string) => {
@@ -205,6 +225,10 @@ export const planPeterQuestion = (question: string, analysis: KpiAnalysis, profi
   const asksOverlap = /\boverlap\b|\bco-?occur(?:ring|rence)?\b|\btogether with\b/.test(text);
   const asksCounterfactual = /\bwhat if\b|\bstayed flat\b|\bwithout\b/.test(text);
   const asksCompanyOrRows = /\bcompany\b|\bcompanies\b|\bcustomer\b|\bclient\b|\bemployer\b|\brow\b|\brows\b|\btransaction\b/.test(text);
+  const asksCount = /\bhow many\b|\bnumber of\b|\btotal count\b|\bhow much\b/.test(text);
+  const companyDimension = dimensions.find(candidate => /company|customer|client|employer|organisation|organization/i.test(candidate)) ?? null;
+  const asksEntityCount = /\bcompany\b|\bcompanies\b|\bcustomer\b|\bcustomers\b|\bclient\b|\bclients\b|\bemployer\b|\bemployers\b/.test(text);
+  const asksRowCount = /\brows?\b|\brecords?\b|\btransactions?\b/.test(text);
   const namedCompanyReference = /\b(?:company|customer|client|employer)\s+(?!changed?\b|changes?\b|with\b|within\b|or\b|and\b|that\b)([a-z0-9][a-z0-9 .&-]{1,80})/.test(text);
   const companyFactor = findMentionedFactor(question, availableFactors.filter(factor => /company|customer|client|employer|organisation|organization/i.test(factor.dimension)));
   const asksWhy = /\bwhy\b|\bcause\b|\bexplain\b|\bchanged?\b|\bdrop\b|\bdecline\b|\bincrease\b/.test(text);
@@ -218,6 +242,12 @@ export const planPeterQuestion = (question: string, analysis: KpiAnalysis, profi
   if (asksOverlap) return { intent: "overlap", dimension: mentionedFactor?.dimension ?? dimension, entity, exclusions: [], limit: 5, rankBy: "absolute_change", needsRows: true, reason: "co_occurrence_request" };
   if (namedCompanyReference && !companyFactor && !rows) return { intent: "drilldown", dimension, entity: null, exclusions: [], limit: rankLimit(question), rankBy: "absolute_change", needsRows: true, reason: "resolve_named_company_in_rows" };
   if (namedCompanyReference && !companyFactor) return { intent: "unsupported", dimension: null, entity: null, exclusions: [], limit: 0, rankBy: "current", needsRows: false, reason: "named_company_not_found" };
+  if (asksCount) {
+    const aggregation = asksEntityCount ? "distinct_count" : asksRowCount ? "row_count" : "metric_total";
+    const countDimension = aggregation === "distinct_count" ? companyDimension : dimension;
+    if (aggregation === "distinct_count" && !countDimension) return { intent: "unsupported", dimension: null, entity: null, exclusions: [], limit: 0, rankBy: "current", needsRows: false, reason: "count_dimension_not_found" };
+    return { intent: "aggregate", dimension: countDimension, entity: null, exclusions: [], limit: 1, rankBy: "current", period: comparisonPeriodForQuestion(question, analysis), aggregation, needsRows: true, reason: "period_aggregation_request" };
+  }
   if (asksOther && dimension && !asksExplicitTopList) return { intent: "compare", dimension, entity, exclusions, limit: 1, rankBy: "current", needsRows: !availableFactors.some(factor => factor.dimension === dimension) || Boolean(analysis.outlierSensitivity?.explanationChanged), reason: "excluded_entity_comparison" };
   if (asksTop && dimension) return { intent: "top_n", dimension, entity, exclusions, limit: rankLimit(question), rankBy, needsRows: !availableFactors.some(factor => factor.dimension === dimension) || Boolean(analysis.outlierSensitivity?.explanationChanged), reason: "dimension_rank_request" };
   if (asksTop) return { intent: "factor_rank", dimension: null, entity: null, exclusions: [], limit: rankLimit(question), rankBy: "absolute_change", needsRows: Boolean(analysis.outlierSensitivity?.explanationChanged), reason: "cross_dimension_factor_rank" };
@@ -225,11 +255,13 @@ export const planPeterQuestion = (question: string, analysis: KpiAnalysis, profi
   if (asksRecommendation) return { intent: "recommend", dimension, entity, exclusions, limit: 3, rankBy: "absolute_change", needsRows: Boolean(analysis.outlierSensitivity?.explanationChanged), reason: "data_priority_request" };
   if (asksCompanyOrRows && entity && asksWhy && mentionedFactor?.dimension === dimension) return { intent: "explain", dimension, entity, exclusions, limit: 3, rankBy: "absolute_change", needsRows: true, reason: "named_company_explanation" };
   if (asksCompanyOrRows) return { intent: "drilldown", dimension, entity, exclusions, scope: mentionedFactor && mentionedFactor.dimension !== dimension ? { dimension: mentionedFactor.dimension, value: mentionedFactor.value } : undefined, limit: rankLimit(question), rankBy: "absolute_change", needsRows: true, reason: "company_or_row_drilldown" };
+  if (asksWhy && !entity && !dimension) return { intent: "overall_explain", dimension: null, entity: null, exclusions: [], limit: 3, rankBy: "absolute_change", needsRows: Boolean(analysis.outlierSensitivity?.explanationChanged), reason: "overall_kpi_explanation" };
   if (asksWhy || entity || dimension) return { intent: "explain", dimension, entity, exclusions, limit: 3, rankBy: "absolute_change", needsRows: true, reason: "entity_or_explanation_request" };
   return { intent: "unsupported", dimension: null, entity: null, exclusions: [], limit: 0, rankBy: "current", needsRows: false, reason: "no_safe_query_interpretation" };
 };
 
 export const resolvePeterPlanWithAi = async (question: string, analysis: KpiAnalysis, profiles: ColumnProfile[], aggregates: PeterAggregate[], fallback: PeterQueryPlan): Promise<PeterQueryPlan> => {
+  if (["overall_explain", "aggregate"].includes(fallback.intent)) return fallback;
   const dimensions = eligibleDimensions(profiles).filter(dimension => dimension !== analysis.metric && dimension !== analysis.dateColumn);
   const factors = buildFactorsFromAggregates(aggregates, profiles, analysis);
   if (!dimensions.length) return fallback;
@@ -354,7 +386,36 @@ export const answerPeterQuery = (input: { question: string; analysis: KpiAnalysi
     if (plan.reason === "named_company_not_found") return unsupported("I could not find a matching company, customer, client, or employer in the cleaned data.");
     if (plan.reason === "ai_entity_not_present") return unsupported("The named entity was not present in the cleaned data, so I will not substitute a different segment.");
     if (plan.reason === "overlap_scope_not_found") return askForClarification("I could not identify the named segment whose overlapping factors you want to examine.");
+    if (plan.reason === "count_dimension_not_found") return unsupported("I could not find a usable company, customer, client, or employer field to count in this import.");
     return askForClarification("I could not confidently map this wording to a distinct data query.");
+  }
+  if (plan.intent === "aggregate") {
+    if (!rows) return unsupported("A cleaned-row aggregation was not available for this request.");
+    const period = plan.period ?? analysis.currentPeriod;
+    const periodRows = comparisonRowsFromImport(rows, analysis).filter(row => row.period === period);
+    if (!periodRows.length) return unsupported(`No cleaned rows were available for ${longReadablePeriod(period)}.`);
+    if (plan.aggregation === "distinct_count") {
+      if (!plan.dimension) return unsupported("Please name what you want counted, such as companies, customers, or rows.");
+      const count = new Set(periodRows.filter(row => row.metric > 0).map(row => safeText(row.values[plan.dimension!])).filter(value => !isUnknown(value)).map(normalise)).size;
+      const item = { dimension: plan.dimension, value: "distinct entities", previous: 0, current: count, impact: count, records: count, confidence: analysis.confidence };
+      return { answer: `${count.toLocaleString()} ${pluralise(plan.dimension.toLowerCase(), count)} had a positive recorded ${analysis.metricLabel.toLowerCase()} value in ${longReadablePeriod(period)}. This is a distinct-entity count from the cleaned rows, not a ranking of company-level changes.`, confidence: analysis.confidence, plan, evidence: { dimension: plan.dimension, items: [item], exclusionApplied: [], source: "cleaned_rows" } };
+    }
+    if (plan.aggregation === "row_count") {
+      const count = periodRows.length;
+      const item = { dimension: "Records", value: "cleaned rows", previous: 0, current: count, impact: count, records: count, confidence: analysis.confidence };
+      return { answer: `${count.toLocaleString()} cleaned ${count === 1 ? "row was" : "rows were"} included in the ${longReadablePeriod(period)} ${analysis.metricLabel.toLowerCase()} calculation.`, confidence: analysis.confidence, plan, evidence: { dimension: "Records", items: [item], exclusionApplied: [], source: "cleaned_rows" } };
+    }
+    const total = periodRows.reduce((sum, row) => sum + row.metric, 0);
+    const item = { dimension: "Total", value: analysis.metricLabel, previous: 0, current: total, impact: total, records: periodRows.length, confidence: analysis.confidence };
+    return { answer: `The total ${analysis.metricLabel.toLowerCase()} in ${longReadablePeriod(period)} was ${plainMetric(total, analysis.currencySymbol)}, calculated from ${periodRows.length.toLocaleString()} cleaned rows.`, confidence: analysis.confidence, plan, evidence: { dimension: "Total", items: [item], exclusionApplied: [], source: "cleaned_rows" } };
+  }
+  if (plan.intent === "overall_explain") {
+    const cardDrivers: PeterFactor[] = analysis.causes.slice(0, plan.limit).map(cause => ({ dimension: cause.dimension, value: cause.value, previous: cause.previousValue, current: cause.currentValue, impact: cause.impact, records: 0, confidence: cause.confidence }));
+    const items = (cardDrivers.length ? cardDrivers : factors.sort(byAbsoluteChange).slice(0, plan.limit));
+    if (!items.length) return unsupported("No measurable top-level drivers were available for this comparison.");
+    const listed = items.map((item, index) => `${index + 1}. ${item.dimension}: ${item.value} (${signedMetric(item.impact, analysis.currencySymbol)})`).join("; ");
+    const direction = analysis.change < 0 ? "decreased" : analysis.change > 0 ? "increased" : "was unchanged";
+    return { answer: `Overall, ${analysis.metricLabel.toLowerCase()} ${direction} from ${plainMetric(analysis.previousTotal, analysis.currencySymbol)} in ${previous} to ${plainMetric(analysis.currentTotal, analysis.currencySymbol)} in ${current} (${signedMetric(analysis.change, analysis.currencySymbol)}). The largest measured top-level drivers were: ${listed}. These are the independently calculated drivers shown in the main analysis; they can overlap and are not expected to sum to the headline change.`, confidence: Math.round(items.reduce((total, item) => total + item.confidence, 0) / items.length), plan, evidence: { dimension: null, items, exclusionApplied: [], source } };
   }
   if (plan.intent === "top_n") {
     if (!plan.dimension) return unsupported("Please name a dimension, such as countries, products, regions, or companies.");

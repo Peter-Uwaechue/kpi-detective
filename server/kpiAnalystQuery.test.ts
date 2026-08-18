@@ -20,6 +20,7 @@ const analysis: KpiAnalysis = {
   totalRowsUsed: 8,
   causes: [
     { id: "country-us", dimension: "Country", value: "United States", impact: -400, previousValue: 1000, currentValue: 600, confidence: 91, shareOfChange: 0.67, counterfactual: 1800, trend: [] },
+    { id: "product-saas", dimension: "Product", value: "SaaS", impact: -400, previousValue: 1000, currentValue: 600, confidence: 89, shareOfChange: 0.67, counterfactual: 1800, trend: [] },
   ],
 };
 
@@ -100,6 +101,31 @@ describe("Ask Peter full-cleaned-data query service", () => {
     expect(result.plan.intent).toBe("factor_rank");
     expect(result.answer).toContain("6th biggest measured factor");
     expect(result.answer).toContain("February 2023");
+  });
+
+  it("explains an unscoped headline change using overall drivers instead of assuming a country", () => {
+    const result = ask("Why did total laid off drop?");
+
+    expect(result.plan.intent).toBe("overall_explain");
+    expect(result.answer).toContain("Overall, layoffs decreased from 2,000 in February 2023 to 1,400 in March 2023");
+    expect(result.answer).toContain("The largest measured top-level drivers were");
+    expect(result.answer).toContain("Country: United States");
+    expect(result.answer).toContain("Product: SaaS");
+    expect(result.answer).toContain("can overlap and are not expected to sum");
+    expect(result.evidence.items).toHaveLength(2);
+    expect(result.evidence.source).toBe("aggregates");
+  });
+
+  it("returns a distinct-company count for the requested month rather than a ranking", () => {
+    const result = ask("How many companies laid off workers in March?");
+
+    expect(result.plan.intent).toBe("aggregate");
+    expect(result.plan.aggregation).toBe("distinct_count");
+    expect(result.plan.period).toBe("2023-03");
+    expect(result.answer).toBe("4 companies had a positive recorded layoffs value in March 2023. This is a distinct-entity count from the cleaned rows, not a ranking of company-level changes.");
+    expect(result.evidence.dimension).toBe("Company");
+    expect(result.evidence.items[0]?.current).toBe(4);
+    expect(result.evidence.source).toBe("cleaned_rows");
   });
 
   it("keeps the suggested why and counterfactual question behavior on the new service", () => {
