@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import type { KpiAnalysis } from "../shared/kpiEngine";
+import type { ColumnProfile, KpiAnalysis } from "../shared/kpiEngine";
 import { answerImportQuestion, buildImportAnalystEvidence, fallbackAnalystAnswer } from "./kpiAnalyst";
 
 const analysis: KpiAnalysis = {
@@ -24,6 +24,16 @@ const analysis: KpiAnalysis = {
     { id: "location-SF Bay Area", dimension: "Location", value: "SF Bay Area", impact: -700, previousValue: 1900, currentValue: 1200, confidence: 76, shareOfChange: 0.41, counterfactual: 3200, trend: [] },
   ],
 };
+
+const profiles: ColumnProfile[] = [
+  { name: "date", kind: "date", confidence: 100, nonEmptyCount: 12, validCount: 12 },
+  { name: "total_laid_off", kind: "number", confidence: 100, nonEmptyCount: 12, validCount: 12 },
+  { name: "Country", kind: "category", confidence: 100, nonEmptyCount: 12, validCount: 12 },
+  { name: "Stage", kind: "category", confidence: 100, nonEmptyCount: 12, validCount: 12 },
+  { name: "Location", kind: "category", confidence: 100, nonEmptyCount: 12, validCount: 12 },
+  { name: "Industry", kind: "category", confidence: 100, nonEmptyCount: 12, validCount: 12 },
+  { name: "Company", kind: "identifier", confidence: 100, nonEmptyCount: 12, validCount: 12 },
+];
 
 const rows = [
   { excluded: false, isOutlier: false, cleanedValues: { date: "2023-02-05", total_laid_off: 1000, Country: "United States", Stage: "Post-IPO", Location: "SF Bay Area", Company: "Atlas Labs" } },
@@ -52,6 +62,47 @@ describe("import-backed KPI analyst", () => {
     expect(answer).toContain("Start with Country: United States");
     expect(answer).toContain("Atlas Labs");
     expect(answer).not.toEqual(answerImportQuestion("Why did United States change?", analysis, evidence));
+  });
+
+  it("answers a free-typed request for another country instead of falling back to the leading country", () => {
+    const countryRows = [
+      { excluded: false, isOutlier: false, cleanedValues: { date: "2023-02-03", total_laid_off: 1600, Country: "United States", Stage: "Post-IPO", Location: "SF Bay Area", Industry: "SaaS", Company: "Atlas Labs" } },
+      { excluded: false, isOutlier: false, cleanedValues: { date: "2023-03-03", total_laid_off: 400, Country: "United States", Stage: "Post-IPO", Location: "SF Bay Area", Industry: "SaaS", Company: "Atlas Labs" } },
+      { excluded: false, isOutlier: false, cleanedValues: { date: "2023-02-06", total_laid_off: 900, Country: "Canada", Stage: "Growth", Location: "Toronto", Industry: "Commerce", Company: "North Co" } },
+      { excluded: false, isOutlier: false, cleanedValues: { date: "2023-03-06", total_laid_off: 300, Country: "Canada", Stage: "Growth", Location: "Toronto", Industry: "Commerce", Company: "North Co" } },
+      { excluded: false, isOutlier: false, cleanedValues: { date: "2023-02-09", total_laid_off: 700, Country: "India", Stage: "Late", Location: "Bengaluru", Industry: "Fintech", Company: "East Co" } },
+      { excluded: false, isOutlier: false, cleanedValues: { date: "2023-03-09", total_laid_off: 300, Country: "India", Stage: "Late", Location: "Bengaluru", Industry: "Fintech", Company: "East Co" } },
+    ];
+    const evidence = buildImportAnalystEvidence("Aside United States what country also had high numbers?", analysis, countryRows, profiles);
+    const answer = answerImportQuestion("Aside United States what country also had high numbers?", analysis, evidence);
+
+    expect(answer).toContain("Canada");
+    expect(answer).not.toContain("United States is the highest other country");
+  });
+
+  it("returns the requested ranked factor from all eligible factor values", () => {
+    const countryRows = [
+      { excluded: false, isOutlier: false, cleanedValues: { date: "2023-02-03", total_laid_off: 1600, Country: "United States", Stage: "Post-IPO", Location: "SF Bay Area", Industry: "SaaS", Company: "Atlas Labs" } },
+      { excluded: false, isOutlier: false, cleanedValues: { date: "2023-03-03", total_laid_off: 400, Country: "United States", Stage: "Post-IPO", Location: "SF Bay Area", Industry: "SaaS", Company: "Atlas Labs" } },
+      { excluded: false, isOutlier: false, cleanedValues: { date: "2023-02-06", total_laid_off: 900, Country: "Canada", Stage: "Growth", Location: "Toronto", Industry: "Commerce", Company: "North Co" } },
+      { excluded: false, isOutlier: false, cleanedValues: { date: "2023-03-06", total_laid_off: 300, Country: "Canada", Stage: "Growth", Location: "Toronto", Industry: "Commerce", Company: "North Co" } },
+      { excluded: false, isOutlier: false, cleanedValues: { date: "2023-02-09", total_laid_off: 700, Country: "India", Stage: "Late", Location: "Bengaluru", Industry: "Fintech", Company: "East Co" } },
+      { excluded: false, isOutlier: false, cleanedValues: { date: "2023-03-09", total_laid_off: 300, Country: "India", Stage: "Late", Location: "Bengaluru", Industry: "Fintech", Company: "East Co" } },
+    ];
+    const evidence = buildImportAnalystEvidence("What is the 6th biggest factor that affected the KPI?", analysis, countryRows, profiles);
+    const answer = answerImportQuestion("What is the 6th biggest factor that affected the KPI?", analysis, evidence);
+
+    expect(answer).toContain("6th biggest measured factor");
+    expect(answer).toMatch(/(Country: Canada|Industry: Commerce|Location: Toronto)/);
+    expect(answer).not.toContain("Country: United States");
+  });
+
+  it("states a clear limitation instead of returning an unrelated leading-driver answer", () => {
+    const evidence = buildImportAnalystEvidence("What was the CEO salary?", analysis, [...rows], profiles);
+    const answer = answerImportQuestion("What was the CEO salary?", analysis, evidence);
+
+    expect(answer).toContain("I can’t answer that specific question");
+    expect(answer).toContain("What I found instead");
   });
 
   it("keeps aggregate-only fallback questions action-specific when row evidence is unavailable", () => {

@@ -6,7 +6,7 @@ import { createImportUploadUrl, getImportObjectInfo } from "./kpiImportStorage";
 import { applyImportReviewAction, processKpiImport, recalculateKpiImport } from "./kpiImportWorker";
 import { invokeLLM } from "./_core/llm";
 import { answerImportQuestion, buildImportAnalystEvidence, fallbackAnalystAnswer, type AnalystContext } from "./kpiAnalyst";
-import type { KpiAnalysis } from "../shared/kpiEngine";
+import type { ColumnProfile, KpiAnalysis } from "../shared/kpiEngine";
 import { getSessionCookieOptions } from "./_core/cookies";
 import { notifyOwner } from "./_core/notification";
 import { systemRouter } from "./_core/systemRouter";
@@ -210,8 +210,9 @@ export const appRouter = router({
       if (!job) throw new Error("Import job was not found.");
       if (!validImportedAnalysis(job.analysisJson)) throw new Error("This import does not yet have a complete analysis.");
       const analysis = job.analysisJson;
+      const profiles = Array.isArray(job.columnsJson) ? job.columnsJson as ColumnProfile[] : [];
       const rows = await getAllImportRows(input.importId);
-      const evidence = buildImportAnalystEvidence(input.question, analysis, rows);
+      const evidence = buildImportAnalystEvidence(input.question, analysis, rows, profiles);
       return {
         answer: answerImportQuestion(input.question, analysis, evidence),
         generated: false,
