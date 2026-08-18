@@ -18,7 +18,7 @@ export type PeterAggregate = {
 
 type PeriodValues = { previous: number; current: number; impact: number; records: number };
 export type PeterFactor = PeriodValues & { dimension: string; value: string; confidence: number };
-export type PeterIntent = "top_n" | "factor_rank" | "compare" | "counterfactual" | "overlap" | "date_detail" | "overall_explain" | "aggregate" | "explain" | "recommend" | "drilldown" | "unsupported";
+export type PeterIntent = "top_n" | "factor_rank" | "compare" | "counterfactual" | "overlap" | "date_detail" | "overall_explain" | "aggregate" | "single_event" | "explain" | "recommend" | "drilldown" | "unsupported";
 
 export type PeterQueryPlan = {
   intent: PeterIntent;
@@ -79,10 +79,11 @@ const ordinal = (value: number) => {
 const pluralise = (value: string, count: number) => count === 1 ? value : value.endsWith("y") ? `${value.slice(0, -1)}ies` : `${value}s`;
 const readableDate = (value: string) => new Intl.DateTimeFormat(undefined, { month: "long", day: "numeric", year: "numeric", timeZone: "UTC" }).format(new Date(`${value}T00:00:00Z`));
 
-const topicForQuestion = (question: string): "top" | "compare" | "counterfactual" | "overlap" | "date_detail" | "recommend" | "aggregate" | "drilldown" | "explain" | "clarify" => {
+const topicForQuestion = (question: string): "top" | "compare" | "counterfactual" | "overlap" | "date_detail" | "recommend" | "aggregate" | "single_event" | "drilldown" | "explain" | "clarify" => {
   const text = normalise(question);
   if (/\boverlap\b|\bco-?occur(?:ring|rence)?\b|\btogether with\b/.test(text)) return "overlap";
   if (/\bdates?\b|\bdays?\b|\bwhen\b/.test(text)) return "date_detail";
+  if (/\b(?:(?:biggest|largest|highest|maximum)\s+(?:single|one)|(?:single|one)\s+(?:biggest|largest|highest|maximum))\b/.test(text)) return "single_event";
   if (/\bhow many\b|\bnumber of\b|\btotal count\b|\bhow much\b/.test(text)) return "aggregate";
   if (/\baside\b|\bbesides\b|\bother\b|\bexcluding\b|\bexcept\b|\bafter\b/.test(text)) return "compare";
   if (/\btop\b|\bhighest\b|\blargest\b|\bbiggest\b|\brank(?:ed|ing)?\b/.test(text)) return "top";
@@ -225,6 +226,7 @@ export const planPeterQuestion = (question: string, analysis: KpiAnalysis, profi
   const asksOverlap = /\boverlap\b|\bco-?occur(?:ring|rence)?\b|\btogether with\b/.test(text);
   const asksCounterfactual = /\bwhat if\b|\bstayed flat\b|\bwithout\b/.test(text);
   const asksCompanyOrRows = /\bcompany\b|\bcompanies\b|\bcustomer\b|\bclient\b|\bemployer\b|\brow\b|\brows\b|\btransaction\b/.test(text);
+  const asksSingleEvent = /\b(?:(?:biggest|largest|highest|maximum)\s+(?:single|one)|(?:single|one)\s+(?:biggest|largest|highest|maximum))\b/.test(text);
   const asksCount = /\bhow many\b|\bnumber of\b|\btotal count\b|\bhow much\b/.test(text);
   const companyDimension = dimensions.find(candidate => /company|customer|client|employer|organisation|organization/i.test(candidate)) ?? null;
   const asksEntityCount = /\bcompany\b|\bcompanies\b|\bcustomer\b|\bcustomers\b|\bclient\b|\bclients\b|\bemployer\b|\bemployers\b/.test(text);
@@ -240,6 +242,7 @@ export const planPeterQuestion = (question: string, analysis: KpiAnalysis, profi
   if (asksOverlap && !entity && !rows) return { intent: "overlap", dimension: null, entity: null, exclusions: [], limit: 5, rankBy: "absolute_change", needsRows: true, reason: "resolve_overlap_scope_in_rows" };
   if (asksOverlap && !entity) return { intent: "unsupported", dimension: null, entity: null, exclusions: [], limit: 0, rankBy: "current", needsRows: false, reason: "overlap_scope_not_found" };
   if (asksOverlap) return { intent: "overlap", dimension: mentionedFactor?.dimension ?? dimension, entity, exclusions: [], limit: 5, rankBy: "absolute_change", needsRows: true, reason: "co_occurrence_request" };
+  if (asksSingleEvent) return { intent: "single_event", dimension, entity: null, exclusions: [], limit: 1, rankBy: "current", needsRows: true, reason: "unscoped_largest_single_event" };
   if (namedCompanyReference && !companyFactor && !rows) return { intent: "drilldown", dimension, entity: null, exclusions: [], limit: rankLimit(question), rankBy: "absolute_change", needsRows: true, reason: "resolve_named_company_in_rows" };
   if (namedCompanyReference && !companyFactor) return { intent: "unsupported", dimension: null, entity: null, exclusions: [], limit: 0, rankBy: "current", needsRows: false, reason: "named_company_not_found" };
   if (asksCount) {
@@ -261,7 +264,7 @@ export const planPeterQuestion = (question: string, analysis: KpiAnalysis, profi
 };
 
 export const resolvePeterPlanWithAi = async (question: string, analysis: KpiAnalysis, profiles: ColumnProfile[], aggregates: PeterAggregate[], fallback: PeterQueryPlan): Promise<PeterQueryPlan> => {
-  if (["overall_explain", "aggregate"].includes(fallback.intent)) return fallback;
+  if (["overall_explain", "aggregate", "single_event"].includes(fallback.intent)) return fallback;
   const dimensions = eligibleDimensions(profiles).filter(dimension => dimension !== analysis.metric && dimension !== analysis.dateColumn);
   const factors = buildFactorsFromAggregates(aggregates, profiles, analysis);
   if (!dimensions.length) return fallback;
@@ -408,6 +411,27 @@ export const answerPeterQuery = (input: { question: string; analysis: KpiAnalysi
     const total = periodRows.reduce((sum, row) => sum + row.metric, 0);
     const item = { dimension: "Total", value: analysis.metricLabel, previous: 0, current: total, impact: total, records: periodRows.length, confidence: analysis.confidence };
     return { answer: `The total ${analysis.metricLabel.toLowerCase()} in ${longReadablePeriod(period)} was ${plainMetric(total, analysis.currencySymbol)}, calculated from ${periodRows.length.toLocaleString()} cleaned rows.`, confidence: analysis.confidence, plan, evidence: { dimension: "Total", items: [item], exclusionApplied: [], source: "cleaned_rows" } };
+  }
+  if (plan.intent === "single_event") {
+    if (!rows) return unsupported("A cleaned-row event scan was not available for this request.");
+    const entityDimension = plan.dimension ?? profiles.find(profile => /company|customer|client|employer|organisation|organization/i.test(profile.name))?.name ?? null;
+    if (!entityDimension) return unsupported("I could not find a usable company, customer, client, or employer field in this import.");
+    const events = rows.flatMap(row => {
+      if (row.excluded || (analysis.outlierSensitivity?.explanationChanged && row.isOutlier)) return [];
+      if (!row.cleanedValues || typeof row.cleanedValues !== "object" || Array.isArray(row.cleanedValues)) return [];
+      const values = row.cleanedValues as Record<string, unknown>;
+      const metric = values[analysis.metric];
+      const entityValue = safeText(values[entityDimension]);
+      if (typeof metric !== "number" || !Number.isFinite(metric) || metric <= 0 || isUnknown(entityValue)) return [];
+      return [{ values, metric, entityValue }];
+    });
+    const event = events.sort((left, right) => right.metric - left.metric || left.entityValue.localeCompare(right.entityValue))[0];
+    if (!event) return unsupported(`No positive ${analysis.metricLabel.toLowerCase()} event with a usable ${entityDimension} value was found in the cleaned data.`);
+    const rawDate = safeText(event.values[analysis.dateColumn]);
+    const dateText = /^\d{4}-\d{2}-\d{2}$/.test(rawDate) ? ` on ${readableDate(rawDate)}` : "";
+    const item = { dimension: entityDimension, value: event.entityValue, previous: 0, current: event.metric, impact: event.metric, records: 1, confidence: analysis.confidence };
+    const basis = analysis.outlierSensitivity?.explanationChanged ? " The outlier-adjusted basis is active for this import." : "";
+    return { answer: `The biggest single ${entityDimension.toLowerCase()} record by ${analysis.metricLabel.toLowerCase()} in the cleaned dataset was ${event.entityValue}${dateText}: ${plainMetric(event.metric, analysis.currencySymbol)}. This is one underlying event across the full import, not a comparison-period ranking.${basis}`, confidence: analysis.confidence, plan, evidence: { dimension: entityDimension, items: [item], exclusionApplied: [], source: "cleaned_rows" } };
   }
   if (plan.intent === "overall_explain") {
     const cardDrivers: PeterFactor[] = analysis.causes.slice(0, plan.limit).map(cause => ({ dimension: cause.dimension, value: cause.value, previous: cause.previousValue, current: cause.currentValue, impact: cause.impact, records: 0, confidence: cause.confidence }));

@@ -128,6 +128,18 @@ describe("Ask Peter full-cleaned-data query service", () => {
     expect(result.evidence.source).toBe("cleaned_rows");
   });
 
+  it("finds the largest single company event across the full cleaned dataset without treating it as a named lookup", () => {
+    const result = ask("What was the biggest single company layoff in this data?");
+
+    expect(result.plan.intent).toBe("single_event");
+    expect(result.plan.entity).toBeNull();
+    expect(result.answer).toBe("The biggest single company record by layoffs in the cleaned dataset was North Co on February 6, 2023: 800. This is one underlying event across the full import, not a comparison-period ranking.");
+    expect(result.evidence.dimension).toBe("Company");
+    expect(result.evidence.items[0]?.value).toBe("North Co");
+    expect(result.evidence.items[0]?.current).toBe(800);
+    expect(result.evidence.source).toBe("cleaned_rows");
+  });
+
   it("keeps the suggested why and counterfactual question behavior on the new service", () => {
     const why = ask("Why did United States change?");
     const whatIf = ask("What if United States had stayed flat?");
