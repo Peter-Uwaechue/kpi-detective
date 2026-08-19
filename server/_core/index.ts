@@ -4,6 +4,7 @@ import { createServer } from "http";
 import net from "net";
 import { createExpressMiddleware } from "@trpc/server/adapters/express";
 import { registerOAuthRoutes } from "./oauth";
+import { registerMagicLinkRoute } from "./magicLink";
 import { registerStorageProxy } from "./storageProxy";
 import { appRouter } from "../routers";
 import { createContext } from "./context";
@@ -35,6 +36,7 @@ export async function createApp(server?: ReturnType<typeof createServer>): Promi
   app.use(express.urlencoded({ limit: "50mb", extended: true }));
   registerStorageProxy(app);
   registerOAuthRoutes(app);
+  registerMagicLinkRoute(app);
   // tRPC API
   app.use(
     "/api/trpc",
