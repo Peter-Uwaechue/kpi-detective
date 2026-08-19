@@ -817,7 +817,7 @@ const displayCurrencyForRows = (rows: ReviewRow[], metric: ColumnProfile, existi
     ? rows.map(row => row.rawValues[metric.metricRecipe!.unitValueColumn])
     : rows.map(row => row.rawValues[metric.name]);
   const explicitCurrencyValues = rows.flatMap(row => Object.entries(row.rawValues)
-    .filter(([column]) => /(?:^|[_\s-])(?:currency|currency code|ccy)(?:$|[_\s-])/i.test(column))
+    .filter(([column]) => /(?:^|[_\s-])(?:currency(?:[_\s-]?code)?|ccy)(?:$|[_\s-])/i.test(column))
     .map(([, value]) => value));
   return detectCurrencyFromValues([...metricValues, ...explicitCurrencyValues]);
 };

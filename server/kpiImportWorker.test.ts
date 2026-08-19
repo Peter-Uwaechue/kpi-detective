@@ -514,8 +514,8 @@ it("separates offsetting positive factors from factors driving an overall KPI de
 describe("KPI import display currency", () => {
   const metricProfile = { name: "revenue_usd", kind: "number" as const, confidence: 100, nonEmptyCount: 2, validCount: 2 };
   const currencyRows = [
-    { rowNumber: 1, rawValues: { revenue_usd: "₦125,000", Currency: "NGN" }, cleanedValues: { revenue_usd: 125000 }, changes: [], issues: [], excluded: false, possibleDuplicate: false, isOutlier: false, exactDuplicate: false, rowSignature: "currency-1" },
-    { rowNumber: 2, rawValues: { revenue_usd: "NGN 42,500", Currency: "NGN" }, cleanedValues: { revenue_usd: 42500 }, changes: [], issues: [], excluded: false, possibleDuplicate: false, isOutlier: false, exactDuplicate: false, rowSignature: "currency-2" },
+    { rowNumber: 1, rawValues: { revenue_usd: "₦125,000", CurrencyCode: "NGN" }, cleanedValues: { revenue_usd: 125000 }, changes: [], issues: [], excluded: false, possibleDuplicate: false, isOutlier: false, exactDuplicate: false, rowSignature: "currency-1" },
+    { rowNumber: 2, rawValues: { revenue_usd: "NGN 42,500", CurrencyCode: "NGN" }, cleanedValues: { revenue_usd: 42500 }, changes: [], issues: [], excluded: false, possibleDuplicate: false, isOutlier: false, exactDuplicate: false, rowSignature: "currency-2" },
   ];
 
   it("detects source currency and preserves the cleaned numeric amounts", () => {
