@@ -323,27 +323,3 @@
 .currency-selector { display: flex; align-items: center; justify-content: space-between; gap: 16px; margin: 20px 0; padding: 16px 18px; border: 1px solid #d9e5e1; border-radius: 16px; background: linear-gradient(135deg, #f6fbf9, #fff); }
 .currency-selector-copy { min-width: 0; }.currency-selector-copy .eyebrow { display: block; margin-bottom: 4px; }.currency-selector-copy p { margin: 0; color: var(--muted); font-size: 13px; line-height: 1.45; }.currency-selector label { min-width: min(360px, 52vw); }.currency-selector select { width: 100%; min-height: 42px; padding: 0 34px 0 12px; border: 1px solid var(--line-dark); border-radius: 10px; color: var(--ink); background: var(--card); font: inherit; font-size: 13px; cursor: pointer; }.currency-selector select:focus-visible { outline: 3px solid rgba(27, 131, 112, .24); outline-offset: 2px; border-color: var(--mint-deep); }.currency-selector.is-compact { margin: 0; padding: 0; border: 0; border-radius: 0; background: transparent; gap: 7px; }.currency-selector.is-compact .currency-selector-copy { display: none; }.currency-selector.is-compact label { min-width: 0; max-width: 184px; }.currency-selector.is-compact select { min-height: 34px; padding: 0 24px 0 9px; border-radius: 8px; font-size: 12px; }
 @media (max-width: 720px) { .currency-selector { align-items: stretch; flex-direction: column; gap: 10px; }.currency-selector label { min-width: 0; width: 100%; }.currency-selector.is-compact { flex-direction: row; width: auto; }.currency-selector.is-compact label { width: 150px; } }
-
-
-/* Review-only abbreviation aliases are intentionally distinct from automatic cleaning. */
-.possible-alias-review { margin-top: 22px; padding: 20px; border: 1px solid #ecd5a6; border-radius: 16px; background: #fffaf0; box-shadow: 0 10px 26px rgba(114, 83, 28, .055); }
-.possible-alias-heading { display: flex; align-items: flex-start; justify-content: space-between; gap: 16px; }
-.possible-alias-heading h2 { margin: 6px 0 0; color: #6d511a; font-size: 18px; letter-spacing: -.04em; }
-.possible-alias-heading > span { padding: 5px 8px; border: 1px solid #e5cb95; border-radius: 999px; color: #815b14; background: #fff1cf; font: 600 9px 'DM Mono', monospace; text-transform: uppercase; letter-spacing: .07em; }
-.possible-alias-review > p { max-width: 680px; margin: 10px 0 0; color: #765d2a; font-size: 11px; line-height: 1.55; }
-.possible-alias-list { display: grid; gap: 10px; margin-top: 15px; }
-.possible-alias-card { display: flex; align-items: center; justify-content: space-between; gap: 18px; padding: 15px; border: 1px solid #ecdcb9; border-radius: 12px; background: rgba(255,255,255,.76); }
-.possible-alias-card h3 { margin: 5px 0 0; color: var(--ink); font-size: 14px; letter-spacing: -.025em; }
-.possible-alias-card h3 b { color: #765719; }
-.possible-alias-card p { max-width: 640px; margin: 6px 0 0; color: var(--ink-soft); font-size: 10px; line-height: 1.45; }
-.possible-alias-actions { flex: 0 0 auto; display: flex; gap: 8px; }
-.possible-alias-actions .secondary-action, .possible-alias-actions .primary-action { height: 37px; padding: 0 11px; font-size: 10px; white-space: nowrap; }
-.possible-alias-actions .primary-action { border-color: #7a5b1d; background: #7a5b1d; }
-.possible-alias-actions .primary-action:hover { background: #654814; }
-.dark-mode .possible-alias-review { border-color: #705e35; background: #332d20; box-shadow: none; }
-.dark-mode .possible-alias-heading h2, .dark-mode .possible-alias-card h3 { color: #f2e7c7; }
-.dark-mode .possible-alias-review > p, .dark-mode .possible-alias-card p { color: #d5c69c; }
-.dark-mode .possible-alias-card { border-color: #5d5236; background: rgba(20, 30, 36, .32); }
-.dark-mode .possible-alias-heading > span { border-color: #77663c; color: #f0d794; background: #4a3b20; }
-.dark-mode .possible-alias-card h3 b { color: #f0d794; }
-@media (max-width: 640px) { .possible-alias-review { padding: 15px; }.possible-alias-card { align-items: stretch; flex-direction: column; gap: 13px; }.possible-alias-actions { display: grid; grid-template-columns: 1fr 1fr; }.possible-alias-actions button { width: 100%; }.possible-alias-heading h2 { font-size: 16px; } }

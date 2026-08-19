@@ -534,7 +534,7 @@ describe("KPI import display currency", () => {
 });
 
 
-describe("KPI import category alias-resolution matrix", () => {
+describe("KPI import category and text-safety matrix", () => {
   const categoryProfile = [{ name: "Location", kind: "category" as const, confidence: 100, nonEmptyCount: 1, validCount: 1 }];
   const row = (rowNumber: number, location: string) => ({
     rowNumber,
@@ -549,83 +549,74 @@ describe("KPI import category alias-resolution matrix", () => {
     rowSignature: `location-${rowNumber}`,
   });
 
-  it("reconciles formatting, Unicode, controlled aliases, and an unambiguous minor typo without merging distinct values", () => {
+  it("reconciles visible-equivalent formatting, invisible Unicode characters, accents, and mojibake without merging distinct entities", () => {
     const locations = readFileSync(new URL("./fixtures/category-variation-matrix.csv", import.meta.url), "utf8").trimEnd().split(/\r?\n/).slice(1);
-    const rows = locations.map((location, index) => row(index + 1, location));
     const workerStats = stats();
+    const rows = locations.map((Location, index) => {
+      const cleaned = __kpiImportWorkerTesting.cleanRow({ Location }, categoryProfile, workerStats);
+      return { ...row(index + 1, String(cleaned.cleanedValues.Location)), ...cleaned, rowSignature: `fixture-${index + 1}` };
+    });
 
     __kpiImportWorkerTesting.applyFuzzyCategoryReview(rows, categoryProfile, workerStats);
 
     expect(rows.slice(0, 4).map(item => item.cleanedValues.Location)).toEqual(["Abuja", "Abuja", "Abuja", "Abuja"]);
-    expect(rows.slice(4, 9).map(item => item.cleanedValues.Location)).toEqual(["Port Harcourt", "Port Harcourt", "Port Harcourt", "PH", "Port Harcourt"]);
-    expect(rows.slice(9, 12).map(item => item.cleanedValues.Location)).toEqual(["Sao Paulo", "Sao Paulo", "Sao Paulo"]);
-    expect(rows.slice(12, 14).map(item => item.cleanedValues.Location)).toEqual(["O'Connor", "O'Connor"]);
-    expect(rows.slice(14).map(item => item.cleanedValues.Location)).toEqual(["Congo", "DR Congo", "Niger", "Nigeria"]);
-    expect(rows[2]?.changes[0]?.reason).toBe("Standardised equivalent category formatting");
-    expect(rows[7]?.changes).toEqual([]);
-    expect(rows[8]?.changes[0]?.reason).toBe("Merged a high-confidence near-duplicate category");
+    expect(new Set(rows.slice(4, 9).map(item => item.cleanedValues.Location))).toEqual(new Set(["Port Harcourt"]));
+    expect(new Set(rows.slice(9, 13).map(item => item.cleanedValues.Location))).toHaveLength(1);
+    expect(rows.slice(13, 15).map(item => item.cleanedValues.Location)).toEqual(["O'Connor", "O'Connor"]);
+    expect(rows.slice(15).map(item => item.cleanedValues.Location)).toEqual(["Congo", "DR Congo", "Niger", "Nigeria"]);
+    expect(rows[2]?.changes).toEqual(expect.arrayContaining([expect.objectContaining({ reason: "Standardised equivalent category formatting" })]));
   });
 
-  it("flags a low-frequency abbreviation/full-name pair for review without applying a merge", () => {
-    const rows = [
-      ...Array.from({ length: 30 }, (_, index) => row(index + 1, "Lagos")),
-      row(31, "PH"), row(32, "PH"), row(33, "Port Harcourt"), row(34, "Port Harcourt"), row(35, "Abuja"), row(36, "Abuja"),
-    ];
+  it("preserves proper accented text and repairs common UTF-8 mojibake before category matching", () => {
+    const rawRows = ["São Paulo", "SÃ£o Paulo", "Sao Paulo"].map((Location, index) => ({ Location, rowNumber: index + 1 }));
+    const cleaned = rawRows.map(source => __kpiImportWorkerTesting.cleanRow(source, categoryProfile, stats()));
+    const reviewRows = cleaned.map((item, index) => ({ ...row(index + 1, String(item.cleanedValues.Location)), ...item, rowSignature: `accent-${index}` }));
+
+    expect(cleaned.map(item => item.cleanedValues.Location)).toEqual(["São Paulo", "São Paulo", "Sao Paulo"]);
+    expect(cleaned[1]?.changes[0]).toMatchObject({ from: "SÃ£o Paulo", to: "São Paulo" });
+    __kpiImportWorkerTesting.applyFuzzyCategoryReview(reviewRows, categoryProfile, stats());
+    expect(new Set(reviewRows.map(item => item.cleanedValues.Location))).toHaveLength(1);
+  });
+
+  it("leaves abbreviation/full-name pairs separate and does not create an abbreviation review proposal", () => {
+    const rows = [row(1, "PH"), row(2, "PH"), row(3, "Port Harcourt"), row(4, "Port Harcourt")];
     const workerStats = stats();
 
     __kpiImportWorkerTesting.applyFuzzyCategoryReview(rows, categoryProfile, workerStats);
-    const proposals = __kpiImportWorkerTesting.findPossibleAliasProposals(rows, categoryProfile);
 
-    expect(rows.slice(30, 34).map(item => item.cleanedValues.Location)).toEqual(["PH", "PH", "Port Harcourt", "Port Harcourt"]);
+    expect(rows.map(item => item.cleanedValues.Location)).toEqual(["PH", "PH", "Port Harcourt", "Port Harcourt"]);
     expect(workerStats.fuzzyCategoryRows).toBe(0);
-    expect(proposals).toEqual([expect.objectContaining({ column: "Location", abbreviation: "PH", expansion: "Port Harcourt", abbreviationCount: 2, expansionCount: 2, combinedCount: 4, dominantValue: "Lagos", dominantCount: 30 })]);
   });
 
-  it("merges a possible alias only after approval and honours a keep-separate decision", () => {
-    const makeRows = () => [
-      ...Array.from({ length: 30 }, (_, index) => row(index + 1, "Lagos")),
-      row(31, "PH"), row(32, "PH"), row(33, "Port Harcourt"), row(34, "Port Harcourt"), row(35, "Abuja"), row(36, "Abuja"),
-    ];
-    const approvedRows = makeRows();
-    const approvedProposal = __kpiImportWorkerTesting.findPossibleAliasProposals(approvedRows, categoryProfile)[0]!;
-    __kpiImportWorkerTesting.applyPossibleAliasReviewDecision(approvedRows, approvedProposal, "merge");
+  it("preserves leading-zero product, ZIP, and phone values as identifiers", () => {
+    const rows = Array.from({ length: 8 }, (_, index) => ({ Date: `2026-05-${String(index + 1).padStart(2, "0")}`, Revenue: String(100 + index), "Product Code": `00712${index}`, "ZIP Code": `0012${index}`, "Phone Number": `07001234${index}` }));
+    const profiles = __kpiImportWorkerTesting.inferProfiles(Object.keys(rows[0]!), rows);
+    const cleaned = rows.map(source => __kpiImportWorkerTesting.cleanRow(source, profiles, stats()));
 
-    expect(approvedRows.slice(30, 34).map(item => item.cleanedValues.Location)).toEqual(["Port Harcourt", "Port Harcourt", "Port Harcourt", "Port Harcourt"]);
-    expect(approvedRows[30]?.changes[0]).toMatchObject({ reason: "Merged after explicit possible-alias review", from: "PH", to: "Port Harcourt" });
-
-    const dismissedRows = makeRows();
-    const dismissedProposal = __kpiImportWorkerTesting.findPossibleAliasProposals(dismissedRows, categoryProfile)[0]!;
-    __kpiImportWorkerTesting.applyPossibleAliasReviewDecision(dismissedRows, dismissedProposal, "keep-separate");
-
-    expect(dismissedRows.slice(30, 34).map(item => item.cleanedValues.Location)).toEqual(["PH", "PH", "Port Harcourt", "Port Harcourt"]);
-    expect(__kpiImportWorkerTesting.findPossibleAliasProposals(dismissedRows, categoryProfile)).toEqual([]);
-    expect(dismissedRows[30]?.issues[0]).toMatchObject({ type: "possible-alias", message: `Dismissed possible alias: ${dismissedProposal.id}` });
+    expect(["Product Code", "ZIP Code", "Phone Number"].map(name => profiles.find(profile => profile.name === name)?.kind)).toEqual(["identifier", "identifier", "identifier"]);
+    expect(cleaned[0]?.cleanedValues).toMatchObject({ "Product Code": "007120", "ZIP Code": "00120", "Phone Number": "070012340" });
   });
 
-  it("reverses a legacy automatic abbreviation mapping from its stored audit trail", () => {
-    const legacyRow = row(1, "Port Harcourt");
-    legacyRow.changes.push({ column: "Location", from: "PH", to: "Port Harcourt", reason: "Mapped a controlled category alias" });
+  it("retains long free-text descriptions without classifying them as categories or sending them into fuzzy matching", () => {
+    const longDescription = "Customer reported a delayed delivery after a warehouse routing exception and requested a detailed follow-up from the operations team. ".repeat(2);
+    const rows = Array.from({ length: 8 }, (_, index) => ({ Date: `2026-06-${String(index + 1).padStart(2, "0")}`, Revenue: String(200 + index), Description: `${longDescription}${index}`, Region: index % 2 ? "Lagos" : "Abuja" }));
+    const profiles = __kpiImportWorkerTesting.inferProfiles(Object.keys(rows[0]!), rows);
+    const cleaned = rows.map(source => __kpiImportWorkerTesting.cleanRow(source, profiles, stats()));
 
-    const reverted = __kpiImportWorkerTesting.revertDeprecatedAutomaticAbbreviationChanges([legacyRow]);
-
-    expect(reverted).toEqual([legacyRow]);
-    expect(legacyRow.cleanedValues.Location).toBe("PH");
-    expect(legacyRow.changes).toEqual([]);
+    expect(profiles.find(profile => profile.name === "Description")).toMatchObject({ kind: "unknown" });
+    expect(cleaned[0]?.cleanedValues.Description).toBe(rows[0]?.Description);
   });
 
-  it("never auto-expands other acronym-style location values such as NY", () => {
-    const rows = [
-      ...Array.from({ length: 30 }, (_, index) => row(index + 1, "Lagos")),
-      row(31, "NY"), row(32, "NY"), row(33, "New York"), row(34, "New York"), row(35, "Abuja"), row(36, "Abuja"),
-    ];
-    const workerStats = stats();
+  it("keeps multiple valid KPI candidates visible, recommends Revenue, and supports an explicit switch to Profit", () => {
+    const rows = Array.from({ length: 8 }, (_, index) => ({ Date: `2026-07-${String(index + 1).padStart(2, "0")}`, Revenue: `$${1_000 + index * 100}`, Profit: String(200 + index * 20), "Units Sold": String(10 + index), Region: index % 2 ? "North" : "South" }));
+    const profiles = __kpiImportWorkerTesting.inferProfiles(Object.keys(rows[0]!), rows);
+    const candidates = profiles.filter(profile => profile.isMetricCandidate).map(profile => profile.name);
+    const selected = __kpiImportWorkerTesting.findMetric(profiles);
+    const profitProfiles = __kpiImportWorkerTesting.applyMetricSelection(profiles, "Profit");
 
-    __kpiImportWorkerTesting.applyFuzzyCategoryReview(rows, categoryProfile, workerStats);
-    const proposals = __kpiImportWorkerTesting.findPossibleAliasProposals(rows, categoryProfile);
-
-    expect(rows.slice(30, 34).map(item => item.cleanedValues.Location)).toEqual(["NY", "NY", "New York", "New York"]);
-    expect(workerStats.fuzzyCategoryRows).toBe(0);
-    expect(proposals).toEqual([expect.objectContaining({ abbreviation: "NY", expansion: "New York" })]);
+    expect(candidates).toEqual(expect.arrayContaining(["Revenue", "Profit", "Units Sold"]));
+    expect(selected).toMatchObject({ name: "Revenue", isSelectedMetric: true, selectionReason: expect.stringContaining("Revenue") });
+    expect(__kpiImportWorkerTesting.findMetric(profitProfiles)).toMatchObject({ name: "Profit", isSelectedMetric: true, selectionReason: expect.stringContaining("Selected manually") });
   });
 
   it("still reconciles exact formatting equivalence in a high-cardinality field without running broad fuzzy matching", () => {
