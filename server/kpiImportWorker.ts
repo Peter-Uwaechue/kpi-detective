@@ -32,10 +32,11 @@ const UNIT_PRICE_TERMS = ["unit price", "unitprice", "price", "rate"];
 const COST_TERMS = ["unit cost", "unitcost", "cost"];
 const DISCOUNT_TERMS = ["discount", "rebate", "markdown"];
 const TAX_TERMS = ["tax", "vat", "gst", "sales tax"];
-const DATE_TERMS = ["date", "day", "time", "month", "week", "created", "ordered", "purchased", "transaction"];
+const DATE_TERMS = ["date", "day", "time", "month", "week", "created", "ordered", "purchased", "timestamp", "event", "occurred", "selling", "sold", "shipped", "delivery", "posted", "recorded", "booking", "period", "quarter", "fiscal"];
+const NUMERIC_DATE_TERMS = ["date", "time", "timestamp", "period", "quarter", "fiscal", "year", "month", "week", "day"];
 const CATEGORY_TERMS = ["region", "state", "city", "location", "product", "category", "channel", "customer", "client", "company", "employer", "industry", "sector", "country", "nation", "stage", "segment", "store", "department", "brand", "type"];
 const IDENTIFIER_PATTERN = /(?:^|[_\s-])(id|order|invoice|transaction|reference|sku|code)(?:$|[_\s-])|(?:invoice|order|transaction|reference|sku|stock|customer)(?:no|number|id|code)?$|(?:id|code|sku|reference)$/i;
-const CURRENCY_CODE_PATTERN = /\b(NGN|USD|EUR|GBP|CAD|AUD|ZAR|KES|GHS|AED|INR)\b/gi;
+const CURRENCY_CODE_PATTERN = /\b(NGN|USD|EUR|GBP|CAD|AUD|ZAR|KES|GHS|AED|INR|JPY|CNY|RMB|CHF|BRL|MXN|NZD|SGD|HKD|KRW|TRY|ILS|SEK|NOK|DKK|PLN|CZK|HUF|THB|IDR|MYR|PHP|VND)\b/gi;
 
 type RawRecord = Record<string, unknown>;
 type ColumnKind = "date" | "number" | "category" | "identifier" | "unknown";
@@ -44,6 +45,12 @@ type DateContext = {
   startPeriod?: string;
   endPeriod?: string;
   fallbackPreference: "day-first" | "month-first";
+};
+type DateRecipe = {
+  kind: "year_month_day";
+  yearColumn: string;
+  monthColumn: string;
+  dayColumn: string;
 };
 type MetricRecipe = {
   kind: "quantity_times_price" | "quantity_times_cost";
@@ -59,6 +66,8 @@ type ColumnProfile = {
   datePreference?: DatePreference;
   dateContext?: DateContext;
   acceptsExcelSerialDates?: boolean;
+  acceptsUnixTimestamps?: boolean;
+  dateRecipe?: DateRecipe;
   isSelectedMetric?: boolean;
   label?: string;
   selectionReason?: string;
@@ -105,20 +114,33 @@ const signatureFor = (values: RawRecord) => crypto.createHash("sha256").update(J
 
 const parseNumber = (value: unknown): number | null => {
   if (typeof value === "number") return Number.isFinite(value) ? value : null;
-  const raw = text(value);
+  const raw = text(value).replace(/^'/, ""); // Excel/Sheets text-preservation apostrophe.
   if (!raw || missing(raw)) return null;
-  const negative = /^\(.*\)$/.test(raw) || /^\s*-/.test(raw);
+  const accountingSuffix = raw.match(/\b(CR|DR)\s*$/i)?.[1]?.toUpperCase();
+  const negative = /^\(.*\)$/.test(raw) || /^\s*-/.test(raw) || /-\s*$/.test(raw) || accountingSuffix === "DR";
   const compact = raw
+    .replace(/-\s*$/, "")
+    .replace(/\b(?:CR|DR)\s*$/i, "")
+    .replace(/R\$/gi, "")
     .replace(CURRENCY_CODE_PATTERN, "")
-    .replace(/[()\s$€£¥₦₹-]/g, "");
-  if (!compact || /[A-Za-z]/.test(compact)) return null;
-  const comma = compact.lastIndexOf(",");
-  const dot = compact.lastIndexOf(".");
-  let numberText = compact;
-  if (comma !== -1 && dot !== -1) numberText = comma > dot ? compact.replace(/\./g, "").replace(",", ".") : compact.replace(/,/g, "");
-  else if (comma !== -1 && dot === -1) numberText = /,\d{1,2}$/.test(compact) ? compact.replace(",", ".") : compact.replace(/,/g, "");
-  const parsed = Number(numberText);
-  return Number.isFinite(parsed) ? (negative ? -Math.abs(parsed) : parsed) : null;
+    .replace(/[()\s$€£¥₦₹₩₺₪₫₱฿%]/g, "")
+    .replace(/[’']/g, "");
+  const suffix = compact.match(/([KMB])$/i)?.[1]?.toUpperCase();
+  const withoutSuffix = suffix ? compact.slice(0, -1) : compact;
+  if (!withoutSuffix || /[A-DF-Za-df-z]/.test(withoutSuffix)) return null;
+  const scientific = withoutSuffix.match(/^([+-]?(?:\d+(?:[.,]\d*)?|[.,]\d+))[eE]([+-]?\d+)$/);
+  const mantissa = scientific?.[1] ?? withoutSuffix;
+  const exponent = scientific ? `e${scientific[2]}` : "";
+  const comma = mantissa.lastIndexOf(",");
+  const dot = mantissa.lastIndexOf(".");
+  let numberText = mantissa;
+  if (comma !== -1 && dot !== -1) numberText = comma > dot ? mantissa.replace(/\./g, "").replace(",", ".") : mantissa.replace(/,/g, "");
+  else if (comma !== -1 && dot === -1) numberText = /,\d{1,2}$/.test(mantissa) ? mantissa.replace(",", ".") : mantissa.replace(/,/g, "");
+  else if (dot !== -1 && comma === -1 && (mantissa.match(/\./g)?.length ?? 0) > 1) numberText = mantissa.replace(/\./g, "");
+  const parsed = Number(`${numberText}${exponent}`);
+  const multiplier = suffix === "K" ? 1_000 : suffix === "M" ? 1_000_000 : suffix === "B" ? 1_000_000_000 : 1;
+  const adjusted = parsed * multiplier;
+  return Number.isFinite(adjusted) ? (negative ? -Math.abs(adjusted) : adjusted) : null;
 };
 
 const toIso = (year: number, month: number, day: number) => {
@@ -126,8 +148,11 @@ const toIso = (year: number, month: number, day: number) => {
   return candidate.getUTCFullYear() === year && candidate.getUTCMonth() === month - 1 && candidate.getUTCDate() === day ? candidate.toISOString().slice(0, 10) : null;
 };
 
-const EXCEL_SERIAL_MIN = 1;
-const EXCEL_SERIAL_MAX = 2_958_465; // Excel's 9999-12-31 serial ceiling.
+// A bare number is treated as an Excel/Sheets serial only when it is in a
+// modern business-date range. This prevents Year (2026), Month (1–12), Day
+// (1–31), quantities, and small counters from being silently recast as dates.
+const EXCEL_SERIAL_MIN = 20_000; // 1954-10-03 in the 1900 system.
+const EXCEL_SERIAL_MAX = 80_000; // 2119-01-12 in the 1900 system.
 
 const parseExcelSerialDate = (value: unknown) => {
   const serial = parseNumber(value);
@@ -139,15 +164,44 @@ const parseExcelSerialDate = (value: unknown) => {
   return new Date(Date.UTC(1899, 11, 31) + adjustedDays * 86_400_000).toISOString().slice(0, 10);
 };
 
+const parseUnixTimestamp = (value: unknown) => {
+  const numeric = parseNumber(value);
+  if (numeric === null) return null;
+  // Seconds, milliseconds, microseconds, and nanoseconds since 1970. The
+  // range deliberately covers 1980–2100 to avoid treating normal IDs as time.
+  const epochStart = Date.UTC(1980, 0, 1);
+  const epochEnd = Date.UTC(2100, 0, 1);
+  const candidates = [numeric * 1_000, numeric, numeric / 1_000, numeric / 1_000_000];
+  const milliseconds = candidates.find(candidate => Number.isFinite(candidate) && candidate >= epochStart && candidate <= epochEnd);
+  return milliseconds === undefined ? null : new Date(milliseconds).toISOString().slice(0, 10);
+};
+
 const withinObservedPeriodWindow = (value: string, context?: DateContext) => {
   const period = value.slice(0, 7);
   return (!context?.startPeriod || period >= context.startPeriod) && (!context?.endPeriod || period <= context.endPeriod);
 };
 
-const parseDate = (value: unknown, preference: DatePreference = "ambiguous", context?: DateContext, acceptsExcelSerialDates = false) => {
+const parseDate = (value: unknown, preference: DatePreference = "ambiguous", context?: DateContext, acceptsExcelSerialDates = false, acceptsUnixTimestamps = false) => {
   if (value instanceof Date && !Number.isNaN(value.getTime())) return value.toISOString().slice(0, 10);
-  const raw = text(value);
+  const raw = text(value).replace(/^'/, "");
   if (!raw || missing(raw)) return null;
+  const compactCalendar = raw.match(/^(\d{4})(\d{2})(\d{2})(?:[T\s]?(\d{2})(\d{2})(\d{2})?)?$/);
+  if (compactCalendar) return toIso(Number(compactCalendar[1]), Number(compactCalendar[2]), Number(compactCalendar[3]));
+  const compactPeriod = raw.match(/^(\d{4})(\d{2})$/);
+  if (compactPeriod) return toIso(Number(compactPeriod[1]), Number(compactPeriod[2]), 1);
+  const period = raw.match(/^(\d{4})[/-](\d{1,2})$/);
+  if (period) return toIso(Number(period[1]), Number(period[2]), 1);
+  const namedPeriod = raw.match(/^([A-Za-z]{3,9})[\s-]+(\d{4})$/);
+  if (namedPeriod) {
+    const parsed = Date.parse(`1 ${namedPeriod[1]} ${namedPeriod[2]}`);
+    return Number.isNaN(parsed) ? null : new Date(parsed).toISOString().slice(0, 10);
+  }
+  const quarter = raw.match(/^(?:Q([1-4])\s*[-/]?\s*(\d{4})|(\d{4})\s*[-/]?\s*Q([1-4]))$/i);
+  if (quarter) {
+    const quarterNumber = Number(quarter[1] ?? quarter[4]);
+    const year = Number(quarter[2] ?? quarter[3]);
+    return toIso(year, (quarterNumber - 1) * 3 + 1, 1);
+  }
   const iso = raw.match(/^(\d{4})[-/.](\d{1,2})[-/.](\d{1,2})/);
   if (iso) return toIso(Number(iso[1]), Number(iso[2]), Number(iso[3]));
   const slash = raw.match(/^(\d{1,2})[/-](\d{1,2})[/-](\d{2,4})/);
@@ -171,13 +225,18 @@ const parseDate = (value: unknown, preference: DatePreference = "ambiguous", con
     }
     return null;
   }
-  const namedDayFirst = raw.match(/^(\d{1,2})\s*[- ]\s*([A-Za-z]{3,9})\s*[-, ]\s*(\d{2,4})(?:[T\s]+\d{1,2}:\d{2}(?::\d{2})?)?$/);
-  const namedMonthFirst = raw.match(/^([A-Za-z]{3,9})\s+(\d{1,2}),?\s+(\d{2,4})(?:[T\s]+\d{1,2}:\d{2}(?::\d{2})?)?$/);
+  const namedTime = "(?:[T\\s]+\\d{1,2}:\\d{2}(?::\\d{2})?(?:\\s*[AaPp][Mm])?)?";
+  const namedDayFirst = raw.match(new RegExp(`^(\\d{1,2})\\s*[- ]\\s*([A-Za-z]{3,9})\\s*[-, ]\\s*(\\d{2,4})${namedTime}$`));
+  const namedMonthFirst = raw.match(new RegExp(`^([A-Za-z]{3,9})\\s*[- ]?\\s*(\\d{1,2}),?\\s*[- ]\\s*(\\d{2,4})${namedTime}$`));
   if (namedDayFirst || namedMonthFirst) {
     const parsed = Date.parse(raw);
     return Number.isNaN(parsed) ? null : new Date(parsed).toISOString().slice(0, 10);
   }
-  if (acceptsExcelSerialDates) return parseExcelSerialDate(value);
+  if (acceptsExcelSerialDates) {
+    const serialDate = parseExcelSerialDate(value);
+    if (serialDate) return serialDate;
+  }
+  if (acceptsUnixTimestamps) return parseUnixTimestamp(value);
   // Do not pass arbitrary identifier-looking strings to Date.parse: engines can
   // interpret values such as ORD-10001 as a year, producing a false date rate.
   return null;
@@ -246,8 +305,10 @@ const inferBaseProfiles = (headers: string[], samples: RawRecord[]): ColumnProfi
   const dateProfile = inferDateProfile(values);
   const numericRate = values.filter(value => parseNumber(value) !== null).length / values.length;
   const dateHint = headerScore(name, DATE_TERMS);
-  const acceptsExcelSerialDates = dateHint > 0 && values.some(value => parseExcelSerialDate(value) !== null);
-  const dateRate = values.filter(value => parseDate(value, dateProfile.preference, dateProfile.context, acceptsExcelSerialDates) !== null).length / values.length;
+  const numericDateHint = headerScore(name, NUMERIC_DATE_TERMS);
+  const acceptsExcelSerialDates = numericDateHint > 0 && values.some(value => parseExcelSerialDate(value) !== null);
+  const acceptsUnixTimestamps = numericDateHint > 0 && values.some(value => parseUnixTimestamp(value) !== null);
+  const dateRate = values.filter(value => parseDate(value, dateProfile.preference, dateProfile.context, acceptsExcelSerialDates, acceptsUnixTimestamps) !== null).length / values.length;
   const distinctRate = new Set(values.map(text)).size / values.length;
   const numericHint = headerScore(name, REVENUE_TERMS);
   const explicitIdentifier = IDENTIFIER_PATTERN.test(name);
@@ -255,7 +316,7 @@ const inferBaseProfiles = (headers: string[], samples: RawRecord[]): ColumnProfi
   // Values—not header uniqueness—decide whether a date-like column is a date.
   // Headers such as order_date and transaction_date must not be captured by
   // the identifier heuristic merely because every date/time is distinct.
-  if (isReliableDate) return { name, kind: "date", confidence: Math.round(Math.min(99, dateRate * 88 + dateHint * 5)), datePreference: dateProfile.preference, dateContext: dateProfile.context, acceptsExcelSerialDates: acceptsExcelSerialDates || undefined };
+  if (isReliableDate) return { name, kind: "date", confidence: Math.round(Math.min(99, dateRate * 88 + dateHint * 5)), datePreference: dateProfile.preference, dateContext: dateProfile.context, acceptsExcelSerialDates: acceptsExcelSerialDates || undefined, acceptsUnixTimestamps: acceptsUnixTimestamps || undefined };
   const quantityHint = headerScore(name, QUANTITY_TERMS);
   if (explicitIdentifier || (distinctRate > 0.92 && values.length > 7 && /\d/.test(values.map(text).join("")) && numericHint === 0 && quantityHint === 0)) return { name, kind: "identifier", confidence: 82 };
   const categoryHint = headerScore(name, CATEGORY_TERMS);
@@ -286,11 +347,41 @@ const selectMetricProfile = (profiles: ColumnProfile[]): ColumnProfile | null =>
   return fallback ? { ...fallback, isSelectedMetric: true, label: fallback.name, selectionReason: `No labelled monetary total or complete quantity-price pair was found; selected the highest-confidence usable numeric column “${fallback.name}”.` } : null;
 };
 
+const findYearComponent = (headers: string[]) => headers.filter(header => normalise(header).includes("year")).sort((left, right) => headerScore(right, ["year"]) - headerScore(left, ["year"]) || left.localeCompare(right))[0];
+const findMonthComponent = (headers: string[]) => headers.filter(header => normalise(header).includes("month")).sort((left, right) => headerScore(right, ["month"]) - headerScore(left, ["month"]) || left.localeCompare(right))[0];
+const findDayComponent = (headers: string[]) => headers.filter(header => /(^|\s)day($|\s)|day of month|date day/.test(normalise(header)) && !normalise(header).includes("weekday")).sort((left, right) => headerScore(right, ["day of month", "date day", "day"]) - headerScore(left, ["day of month", "date day", "day"]) || left.localeCompare(right))[0];
+
+const deriveYearMonthDayProfile = (headers: string[], samples: RawRecord[]): ColumnProfile | null => {
+  const yearColumn = findYearComponent(headers);
+  const monthColumn = findMonthComponent(headers);
+  const dayColumn = findDayComponent(headers);
+  if (!yearColumn || !monthColumn || !dayColumn || new Set([yearColumn, monthColumn, dayColumn]).size !== 3) return null;
+  const validRows = samples.filter(row => {
+    const year = parseNumber(row[yearColumn]);
+    const month = parseNumber(row[monthColumn]);
+    const day = parseNumber(row[dayColumn]);
+    return year !== null && month !== null && day !== null && Number.isInteger(year) && Number.isInteger(month) && Number.isInteger(day) && year >= 1900 && year <= 2100 && toIso(year, month, day) !== null;
+  }).length;
+  const confidence = samples.length ? validRows / samples.length : 0;
+  if (confidence < PROFILE_MIN_VALID_RATE) return null;
+  return {
+    name: "__derived_date__",
+    label: "Derived Date (Year + Month + Day)",
+    kind: "date",
+    confidence: Math.round(Math.min(99, confidence * 88 + 5)),
+    dateRecipe: { kind: "year_month_day", yearColumn, monthColumn, dayColumn },
+  };
+};
+
 const inferProfiles = (headers: string[], samples: RawRecord[]): ColumnProfile[] => {
   const profiles = inferBaseProfiles(headers, samples);
   const selectedMetric = selectMetricProfile(profiles);
-  if (!selectedMetric) return profiles;
-  return [...profiles.map(profile => profile.name === selectedMetric.name ? selectedMetric : profile), ...(selectedMetric.metricRecipe ? [selectedMetric] : [])];
+  const derivedDate = deriveYearMonthDayProfile(headers, samples);
+  return [
+    ...profiles.map(profile => profile.name === selectedMetric?.name ? selectedMetric : profile),
+    ...(selectedMetric?.metricRecipe ? [selectedMetric] : []),
+    ...(derivedDate ? [derivedDate] : []),
+  ];
 };
 
 async function* csvRecords(stream: Readable): AsyncGenerator<RawRecord> {
@@ -303,7 +394,12 @@ async function* xlsxRecords(stream: Readable): AsyncGenerator<RawRecord> {
   let headers: string[] | null = null;
   for await (const worksheet of reader) {
     for await (const row of worksheet as AsyncIterable<any>) {
-      const values = (row.values as unknown[]).slice(1).map(value => value instanceof Date ? value.toISOString().slice(0, 10) : value ?? "");
+      const values = (row.values as unknown[]).slice(1).map(value => {
+        const resolved = value && typeof value === "object" && "result" in (value as Record<string, unknown>) ? (value as { result?: unknown }).result : value;
+        if (resolved instanceof Date) return resolved.toISOString().slice(0, 10);
+        if (resolved && typeof resolved === "object" && "text" in (resolved as Record<string, unknown>)) return String((resolved as { text?: unknown }).text ?? "");
+        return resolved ?? "";
+      });
       if (!headers) { headers = values.map(value => text(value)); continue; }
       const record: RawRecord = {};
       headers.forEach((header, index) => { if (header) record[header] = values[index] ?? ""; });
@@ -321,10 +417,10 @@ export async function* streamRecords(fileName: string, stream: Readable): AsyncG
 }
 
 const findMetric = (profiles: ColumnProfile[]) => profiles.find(profile => profile.isSelectedMetric && profile.kind === "number") ?? profiles.filter(profile => profile.kind === "number").sort((a, b) => headerScore(b.name, REVENUE_TERMS) - headerScore(a.name, REVENUE_TERMS) || b.confidence - a.confidence)[0];
-const findDate = (profiles: ColumnProfile[]) => profiles.filter(profile => profile.kind === "date").sort((a, b) => headerScore(b.name, DATE_TERMS) - headerScore(a.name, DATE_TERMS) || b.confidence - a.confidence)[0];
+const findDate = (profiles: ColumnProfile[]) => profiles.filter(profile => profile.kind === "date").sort((a, b) => Number(Boolean(a.dateRecipe)) - Number(Boolean(b.dateRecipe)) || headerScore(b.name, DATE_TERMS) - headerScore(a.name, DATE_TERMS) || b.confidence - a.confidence)[0];
 const profilingDetail = (profiles: ColumnProfile[]) => profiles.map(profile => {
   const selected = profile.isSelectedMetric ? "; selected KPI" : "";
-  const preference = profile.kind === "date" && profile.datePreference ? `; ${profile.datePreference}${profile.dateContext?.startPeriod && profile.dateContext?.endPeriod ? `; observed ${profile.dateContext.startPeriod} to ${profile.dateContext.endPeriod}` : ""}${profile.acceptsExcelSerialDates ? "; Excel serials supported" : ""}` : "";
+  const preference = profile.kind === "date" && profile.datePreference ? `; ${profile.datePreference}${profile.dateContext?.startPeriod && profile.dateContext?.endPeriod ? `; observed ${profile.dateContext.startPeriod} to ${profile.dateContext.endPeriod}` : ""}${profile.acceptsExcelSerialDates ? "; Excel serials supported" : ""}${profile.acceptsUnixTimestamps ? "; Unix timestamps supported" : ""}` : "";
   const displayName = profile.label && profile.label !== profile.name ? `${profile.label} (${profile.name})` : profile.name;
   return `${displayName}: ${profile.kind} (${profile.confidence}%${selected}${preference})`;
 }).join(" · ");
@@ -337,6 +433,17 @@ function cleanRow(row: RawRecord, profiles: ColumnProfile[], stats: WorkerStats)
   const changes: CellChange[] = [];
   const issues: DataIssue[] = [];
   for (const profile of profiles) {
+    if (profile.dateRecipe) {
+      const recipe = profile.dateRecipe;
+      const year = parseNumber(row[recipe.yearColumn]);
+      const month = parseNumber(row[recipe.monthColumn]);
+      const day = parseNumber(row[recipe.dayColumn]);
+      const derived = year !== null && month !== null && day !== null ? toIso(year, month, day) : null;
+      cleanedValues[profile.name] = derived;
+      if (derived) { stats.dateChanges++; changes.push({ column: profile.name, from: null, to: derived, reason: `Derived date from ${recipe.yearColumn}, ${recipe.monthColumn}, and ${recipe.dayColumn}` }); }
+      else issues.push({ type: "ambiguous-date", column: profile.name, message: `Could not derive a valid date from ${recipe.yearColumn}, ${recipe.monthColumn}, and ${recipe.dayColumn}.` });
+      continue;
+    }
     if (profile.metricRecipe) {
       const recipe = profile.metricRecipe;
       const quantity = parseNumber(row[recipe.quantityColumn]);
@@ -374,7 +481,7 @@ function cleanRow(row: RawRecord, profiles: ColumnProfile[], stats: WorkerStats)
       continue;
     }
     if (profile.kind === "date") {
-      const parsed = parseDate(raw, profile.datePreference, profile.dateContext, profile.acceptsExcelSerialDates);
+      const parsed = parseDate(raw, profile.datePreference, profile.dateContext, profile.acceptsExcelSerialDates, profile.acceptsUnixTimestamps);
       cleanedValues[profile.name] = parsed ?? raw;
       if (parsed && parsed !== raw) { stats.dateChanges++; changes.push({ column: profile.name, from: raw, to: parsed, reason: "Standardised date" }); }
       if (!parsed) issues.push({ type: "ambiguous-date", column: profile.name, message: "Could not standardise date" });
@@ -823,7 +930,7 @@ export async function applyImportReviewAction(input: { importId: string; rowNumb
       row.changes.splice(index, 1);
     } else {
       const rawValue = input.value ?? "";
-      const value = profile.kind === "number" ? parseNumber(rawValue) : profile.kind === "date" ? parseDate(rawValue, profile.datePreference, profile.dateContext, profile.acceptsExcelSerialDates) : profile.kind === "category" ? (text(rawValue).replace(/\s+/g, " ").trim() || UNKNOWN) : rawValue;
+      const value = profile.kind === "number" ? parseNumber(rawValue) : profile.kind === "date" ? parseDate(rawValue, profile.datePreference, profile.dateContext, profile.acceptsExcelSerialDates, profile.acceptsUnixTimestamps) : profile.kind === "category" ? (text(rawValue).replace(/\s+/g, " ").trim() || UNKNOWN) : rawValue;
       if (profile.kind === "number" && value === null && !missing(rawValue)) throw new Error("Enter a valid numeric value for this column.");
       if (profile.kind === "date" && value === null && !missing(rawValue)) throw new Error("Enter a valid date value for this column.");
       const previous = row.cleanedValues[input.column];
@@ -870,6 +977,7 @@ export const __kpiImportWorkerTesting = {
   findDate,
   parseDate,
   parseExcelSerialDate,
+  parseUnixTimestamp,
   cleanRow,
   applyFuzzyCategoryReview,
   applyPossibleDuplicateReview,

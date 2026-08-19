@@ -1,5 +1,8 @@
+import { createReadStream } from "node:fs";
+import { Readable } from "node:stream";
+import ExcelJS from "exceljs";
 import { describe, expect, it } from "vitest";
-import { __kpiImportWorkerTesting } from "./kpiImportWorker";
+import { __kpiImportWorkerTesting, streamRecords } from "./kpiImportWorker";
 
 type RawRecord = Record<string, unknown>;
 
@@ -321,6 +324,7 @@ it("does not misread identifier strings with year-like digits as dates", () => {
   const rows: RawRecord[] = Array.from({ length: 12 }, (_, index) => ({
     order_id: `ORD-${10001 + index}`,
     transaction_code: `TXN-${20260101 + index}`,
+    transaction_id: String(1704067200 + index * 86400),
     reference: `REF-2026-${100 + index}`,
     created_at: `2026-11-${String(index + 1).padStart(2, "0")} 08:00:00`,
     amount: String(50 + index),
@@ -330,6 +334,7 @@ it("does not misread identifier strings with year-like digits as dates", () => {
 
   expect(profileByName.get("order_id")).toMatchObject({ kind: "identifier" });
   expect(profileByName.get("transaction_code")).toMatchObject({ kind: "identifier" });
+  expect(profileByName.get("transaction_id")).toMatchObject({ kind: "identifier" });
   expect(profileByName.get("reference")).toMatchObject({ kind: "identifier" });
   expect(profileByName.get("created_at")).toMatchObject({ kind: "date" });
   expect(profileByName.get("amount")).toMatchObject({ kind: "number", isSelectedMetric: true });
@@ -369,4 +374,84 @@ it("does not treat serial-sized numbers as dates without a date-labelled column"
   expect(profileByName.get("inventory_value")).toMatchObject({ kind: "number" });
   expect(profileByName.get("revenue_usd")).toMatchObject({ kind: "number" });
   expect(__kpiImportWorkerTesting.findMetric(profiles)?.kind).toBe("number");
+});
+
+
+it("passes the permanent real-world business import capability matrix as one streamed CSV", async () => {
+  const fixture = new URL("./fixtures/real-world-import-capability-matrix.csv", import.meta.url);
+  const rows: RawRecord[] = [];
+  for await (const row of streamRecords("real-world-import-capability-matrix.csv", createReadStream(fixture))) rows.push(row);
+  const profiles = __kpiImportWorkerTesting.inferProfiles(Object.keys(rows[0]!), rows);
+  const byName = new Map(profiles.map(profile => [profile.name, profile]));
+  const cleaned = rows.map(row => __kpiImportWorkerTesting.cleanRow(row, profiles, stats()));
+
+  expect(rows).toHaveLength(12);
+  expect(__kpiImportWorkerTesting.findMetric(profiles)).toMatchObject({ name: "Revenue USD", kind: "number", isSelectedMetric: true });
+  expect(byName.get("Occurred At")).toMatchObject({ kind: "date" });
+  expect(byName.get("Excel Selling Date")).toMatchObject({ kind: "date", acceptsExcelSerialDates: true });
+  expect(byName.get("Unix Timestamp Seconds")).toMatchObject({ kind: "date", acceptsUnixTimestamps: true });
+  expect(byName.get("Unix Timestamp Millis")).toMatchObject({ kind: "date", acceptsUnixTimestamps: true });
+  expect(byName.get("Unix Timestamp Micros")).toMatchObject({ kind: "date", acceptsUnixTimestamps: true });
+  expect(byName.get("Compact Date")).toMatchObject({ kind: "date" });
+  expect(byName.get("Compact Period")).toMatchObject({ kind: "date" });
+  expect(byName.get("Period")).toMatchObject({ kind: "date" });
+  expect(byName.get("Quarter")).toMatchObject({ kind: "date" });
+  expect(byName.get("__derived_date__")).toMatchObject({ kind: "date", dateRecipe: { kind: "year_month_day", yearColumn: "Year", monthColumn: "Month", dayColumn: "Day" } });
+  expect(byName.get("Order ID")).toMatchObject({ kind: "identifier" });
+  expect(byName.get("Customer ID")).toMatchObject({ kind: "identifier" });
+  expect(byName.get("SKU")).toMatchObject({ kind: "identifier" });
+  expect(byName.get("Revenue USD")).toMatchObject({ kind: "number" });
+  expect(byName.get("Amount Text")).toMatchObject({ kind: "number" });
+  expect(byName.get("Accounting Amount")).toMatchObject({ kind: "number" });
+  expect(byName.get("Quantity")).toMatchObject({ kind: "number" });
+  expect(byName.get("Unit Price")).toMatchObject({ kind: "number" });
+  expect(cleaned[0]?.cleanedValues).toMatchObject({
+    "Occurred At": "2026-01-01",
+    "Excel Selling Date": "2022-01-01",
+    "Unix Timestamp Seconds": "2024-01-01",
+    "Unix Timestamp Millis": "2024-01-01",
+    "Unix Timestamp Micros": "2024-01-01",
+    "Compact Date": "2026-01-01",
+    "Compact Period": "2026-01-01",
+    Period: "2026-01-01",
+    Quarter: "2026-01-01",
+    "__derived_date__": "2026-01-01",
+    "Customer ID": "00001001",
+    "Amount Text": 1234.5,
+  });
+  expect(cleaned[2]?.cleanedValues["Revenue USD"]).toBe(1250);
+  expect(cleaned[3]?.cleanedValues["Amount Text"]).toBe(-1250);
+  expect(cleaned[4]?.cleanedValues["Amount Text"]).toBe(3000.5);
+  expect(cleaned[1]?.cleanedValues["Accounting Amount"]).toBe(-2345.67);
+  expect(cleaned[2]?.cleanedValues["Accounting Amount"]).toBe(1234567.89);
+  expect(cleaned[3]?.cleanedValues["Accounting Amount"]).toBe(-1250);
+  expect(cleaned[4]?.cleanedValues["Accounting Amount"]).toBe(1250);
+  expect(cleaned[5]?.cleanedValues["Accounting Amount"]).toBe(-2000);
+  expect(cleaned[6]?.cleanedValues["Accounting Amount"]).toBe(1000000);
+  expect(cleaned[11]?.cleanedValues.Quantity).toBe(2050);
+  expect(cleaned[9]?.cleanedValues["Revenue USD"]).toBe(4200);
+});
+
+
+it("reads native XLSX dates, serial dates, formula results, and numeric cells through the production stream", async () => {
+  const workbook = new ExcelJS.Workbook();
+  const sheet = workbook.addWorksheet("Sales");
+  sheet.addRow(["Selling Date", "Excel Serial Date", "Revenue USD", "Order ID"]);
+  for (let index = 0; index < 12; index++) {
+    const row = sheet.addRow([new Date(Date.UTC(2026, 0, index + 1)), 44562 + index, 1000 + index * 25, `ORD-${1000 + index}`]);
+    if (index === 0) row.getCell(3).value = { formula: "44562/44.562", result: 1000 };
+  }
+  const bytes = await workbook.xlsx.writeBuffer();
+  const rows: RawRecord[] = [];
+  for await (const row of streamRecords("native-spreadsheet.xlsx", Readable.from([Buffer.from(bytes)]))) rows.push(row);
+  const profiles = __kpiImportWorkerTesting.inferProfiles(Object.keys(rows[0]!), rows);
+  const byName = new Map(profiles.map(profile => [profile.name, profile]));
+  const cleaned = rows.map(row => __kpiImportWorkerTesting.cleanRow(row, profiles, stats()));
+
+  expect(rows).toHaveLength(12);
+  expect(byName.get("Selling Date")).toMatchObject({ kind: "date" });
+  expect(byName.get("Excel Serial Date")).toMatchObject({ kind: "date", acceptsExcelSerialDates: true });
+  expect(byName.get("Revenue USD")).toMatchObject({ kind: "number", isSelectedMetric: true });
+  expect(byName.get("Order ID")).toMatchObject({ kind: "identifier" });
+  expect(cleaned[0]?.cleanedValues).toMatchObject({ "Selling Date": "2026-01-01", "Excel Serial Date": "2022-01-01", "Revenue USD": 1000 });
 });
