@@ -1,4 +1,4 @@
-import { createReadStream } from "node:fs";
+import { createReadStream, readFileSync } from "node:fs";
 import { Readable } from "node:stream";
 import ExcelJS from "exceljs";
 import { describe, expect, it } from "vitest";
@@ -530,5 +530,50 @@ describe("KPI import display currency", () => {
 
     expect(result).toMatchObject({ currencyCode: "GBP", currencySource: "manual" });
     expect(currencyRows.map(row => row.cleanedValues.revenue_usd)).toEqual([125000, 42500]);
+  });
+});
+
+
+describe("KPI import category alias-resolution matrix", () => {
+  const categoryProfile = [{ name: "Location", kind: "category" as const, confidence: 100, nonEmptyCount: 1, validCount: 1 }];
+  const row = (rowNumber: number, location: string) => ({
+    rowNumber,
+    rawValues: { Location: location },
+    cleanedValues: { Location: location },
+    changes: [],
+    issues: [],
+    excluded: false,
+    possibleDuplicate: false,
+    isOutlier: false,
+    exactDuplicate: false,
+    rowSignature: `location-${rowNumber}`,
+  });
+
+  it("reconciles formatting, Unicode, controlled aliases, and an unambiguous minor typo without merging distinct values", () => {
+    const locations = readFileSync(new URL("./fixtures/category-variation-matrix.csv", import.meta.url), "utf8").trimEnd().split(/\r?\n/).slice(1);
+    const rows = locations.map((location, index) => row(index + 1, location));
+    const workerStats = stats();
+
+    __kpiImportWorkerTesting.applyFuzzyCategoryReview(rows, categoryProfile, workerStats);
+
+    expect(rows.slice(0, 4).map(item => item.cleanedValues.Location)).toEqual(["Abuja", "Abuja", "Abuja", "Abuja"]);
+    expect(rows.slice(4, 9).map(item => item.cleanedValues.Location)).toEqual(["Port Harcourt", "Port Harcourt", "Port Harcourt", "Port Harcourt", "Port Harcourt"]);
+    expect(rows.slice(9, 12).map(item => item.cleanedValues.Location)).toEqual(["Sao Paulo", "Sao Paulo", "Sao Paulo"]);
+    expect(rows.slice(12, 14).map(item => item.cleanedValues.Location)).toEqual(["O'Connor", "O'Connor"]);
+    expect(rows.slice(14).map(item => item.cleanedValues.Location)).toEqual(["Congo", "DR Congo", "Niger", "Nigeria"]);
+    expect(rows[2]?.changes[0]?.reason).toBe("Standardised equivalent category formatting");
+    expect(rows[7]?.changes[0]?.reason).toBe("Mapped a controlled category alias");
+    expect(rows[8]?.changes[0]?.reason).toBe("Merged a high-confidence near-duplicate category");
+  });
+
+  it("still reconciles exact formatting equivalence in a high-cardinality field without running broad fuzzy matching", () => {
+    const rows = Array.from({ length: 401 }, (_, index) => row(index + 1, `Branch ${String(index + 1).padStart(3, "0")}`));
+    rows.push(row(402, "Abuja."), row(403, "abuja"), row(404, "Abuja"));
+    const workerStats = stats();
+
+    __kpiImportWorkerTesting.applyFuzzyCategoryReview(rows, categoryProfile, workerStats);
+
+    expect(rows.slice(-3).map(item => item.cleanedValues.Location)).toEqual(["Abuja", "Abuja", "Abuja"]);
+    expect(rows[0]?.cleanedValues.Location).toBe("Branch 001");
   });
 });

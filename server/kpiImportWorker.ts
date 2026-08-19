@@ -108,7 +108,18 @@ type ReviewRow = {
 
 const text = (value: unknown) => value === null || value === undefined ? "" : String(value).replace(/\u00a0/g, " ").trim();
 const normalise = (value: unknown) => text(value).replace(/[._-]+/g, " ").replace(/\s+/g, " ").trim().toLowerCase();
-const compactCategory = (value: unknown) => normalise(value).replace(/[^a-z0-9]+/g, "");
+const categoryMatchKey = (value: unknown) => text(value)
+  .normalize("NFKD")
+  .replace(/[\u0300-\u036f]/g, "")
+  .replace(/[\u2018\u2019\u201A\u201B]/g, "'")
+  .replace(/[\u201C\u201D\u201E\u201F]/g, "\"")
+  .replace(/[-\u2010-\u2015_\\/]+/g, " ")
+  .replace(/[.,;:!?]+/g, " ")
+  .replace(/['\"]/g, "")
+  .replace(/\s+/g, " ")
+  .trim()
+  .toLocaleLowerCase();
+const compactCategory = (value: unknown) => categoryMatchKey(value).replace(/[^a-z0-9]+/g, "");
 const title = (value: string) => value.toLowerCase().replace(/\b\w/g, letter => letter.toUpperCase());
 const missing = (value: unknown) => ["", "n/a", "na", "null", "none", "-", "undefined", "(blank)"].includes(normalise(value));
 const headerScore = (name: string, terms: string[]) => terms.reduce((sum, term) => sum + (normalise(name) === term ? 2 : normalise(name).includes(term) ? 1 : 0), 0);
@@ -663,6 +674,7 @@ const knownCategoryAlias = (value: string, column: string) => {
   if (/(region|state|city|location|area)/.test(columnName)) {
     if (["ny", "nyc", "newyork"].includes(compact)) return "New York";
     if (["la", "losangeles"].includes(compact)) return "Los Angeles";
+    if (["ph", "portharcourt"].includes(compact)) return "Port Harcourt";
     if (["uk", "unitedkingdom", "greatbritain"].includes(compact)) return "United Kingdom";
     if (["eastcoast", "ecoast"].includes(compact)) return "East Coast";
     if (["westcoast", "wcoast"].includes(compact)) return "West Coast";
@@ -710,6 +722,20 @@ async function persistReviewRows(importId: string, rows: ReviewRow[]) {
   for (let index = 0; index < rows.length; index += BATCH_SIZE) await writeImportRows(importId, rows.slice(index, index + BATCH_SIZE).map(payloadFor));
 }
 
+const preferredCategoryDisplay = (values: string[], frequency: Map<string, number>) => values.slice().sort((left, right) => {
+  const display = (value: string) => text(value).normalize("NFKC").replace(/[-\u2010-\u2015_\\/]+/g, " ").replace(/[.,;:!?]+$/g, "").replace(/\s+/g, " ").trim();
+  const leftDisplay = display(left);
+  const rightDisplay = display(right);
+  const leftPenalty = left === leftDisplay ? 0 : 1;
+  const rightPenalty = right === rightDisplay ? 0 : 1;
+  const leftTitle = /^[A-Z]/.test(leftDisplay) ? 0 : 1;
+  const rightTitle = /^[A-Z]/.test(rightDisplay) ? 0 : 1;
+  return (frequency.get(right) ?? 0) - (frequency.get(left) ?? 0)
+    || leftPenalty - rightPenalty
+    || leftTitle - rightTitle
+    || leftDisplay.localeCompare(rightDisplay);
+})[0]!.normalize("NFKC").replace(/[-\u2010-\u2015_\\/]+/g, " ").replace(/[.,;:!?]+$/g, "").replace(/\s+/g, " ").trim();
+
 function applyFuzzyCategoryReview(rows: ReviewRow[], profiles: ColumnProfile[], stats: WorkerStats) {
   const changedRows = new Set<number>();
   const aliasGroups = new Set<string>();
@@ -721,26 +747,64 @@ function applyFuzzyCategoryReview(rows: ReviewRow[], profiles: ColumnProfile[], 
       if (value !== UNKNOWN) frequency.set(value, (frequency.get(value) ?? 0) + 1);
     });
     const values = Array.from(frequency.keys());
-    // Fuzzy reconciliation is for human-managed dimensions such as region/channel.
-    // Skip very high-cardinality fields rather than risk slow or over-broad matching.
-    if (values.length > MAX_FUZZY_CATEGORY_VALUES) continue;
-    const replacementByValue = new Map<string, string>();
-    values.sort((left, right) => (frequency.get(left) ?? 0) - (frequency.get(right) ?? 0) || left.localeCompare(right)).forEach(value => {
-      const alias = knownCategoryAlias(value, profile.name);
-      const candidates = values.filter(candidate => candidate !== value && candidate.length >= 4 && value.length >= 4 && (frequency.get(candidate) ?? 0) >= (frequency.get(value) ?? 0));
-      const fuzzy = candidates.map(candidate => ({ candidate, score: similarity(compactCategory(value), compactCategory(candidate)) })).sort((left, right) => right.score - left.score || left.candidate.localeCompare(right.candidate))[0];
-      const replacement = alias ?? (fuzzy && fuzzy.score >= 0.93 ? fuzzy.candidate : null);
-      if (replacement && replacement !== value) replacementByValue.set(value, replacement);
+    const replacementByValue = new Map<string, { value: string; reason: string }>();
+
+    // Formatting-only equivalence is deterministic and remains safe even in a high-cardinality column.
+    const valuesByKey = new Map<string, string[]>();
+    values.forEach(value => {
+      const key = categoryMatchKey(value);
+      if (!key) return;
+      const group = valuesByKey.get(key) ?? [];
+      group.push(value);
+      valuesByKey.set(key, group);
     });
+    valuesByKey.forEach(group => {
+      if (group.length < 2) return;
+      const replacement = preferredCategoryDisplay(group, frequency);
+      group.forEach(value => {
+        if (value !== replacement) replacementByValue.set(value, { value: replacement, reason: "Standardised equivalent category formatting" });
+      });
+    });
+
+    values.sort((left, right) => (frequency.get(left) ?? 0) - (frequency.get(right) ?? 0) || left.localeCompare(right)).forEach(value => {
+      if (replacementByValue.has(value)) return;
+      const alias = knownCategoryAlias(value, profile.name);
+      if (alias && alias !== value) {
+        replacementByValue.set(value, { value: alias, reason: "Mapped a controlled category alias" });
+        return;
+      }
+      // Fuzzy matching is intentionally conservative: only remaining category values, never high-cardinality fields,
+      // no short labels/acronyms, and no merge when the nearest candidate is ambiguous.
+      if (values.length > MAX_FUZZY_CATEGORY_VALUES) return;
+      const valueKey = compactCategory(value);
+      if (valueKey.length < 4) return;
+      const valueFrequency = frequency.get(value) ?? 0;
+      const candidates = values.filter(candidate => {
+        const candidateKey = compactCategory(candidate);
+        const candidateFrequency = frequency.get(candidate) ?? 0;
+        return candidate !== value
+          && !replacementByValue.has(candidate)
+          && candidateKey.length >= 4
+          && (candidateFrequency > valueFrequency || (candidateFrequency === valueFrequency && candidateKey.length >= valueKey.length));
+      });
+      const ranked = candidates.map(candidate => ({ candidate, score: similarity(valueKey, compactCategory(candidate)) })).sort((left, right) => right.score - left.score || left.candidate.localeCompare(right.candidate));
+      const fuzzy = ranked[0];
+      const runnerUp = ranked[1];
+      const longMinorTypo = valueKey.length >= 8 && (fuzzy?.candidate.length ?? 0) >= 8 && (fuzzy?.score ?? 0) >= 0.88;
+      const highSimilarity = (fuzzy?.score ?? 0) >= 0.93 || longMinorTypo;
+      const unambiguous = !runnerUp || (fuzzy!.score - runnerUp.score) >= 0.04;
+      if (fuzzy && highSimilarity && unambiguous) replacementByValue.set(value, { value: fuzzy.candidate, reason: "Merged a high-confidence near-duplicate category" });
+    });
+
     rows.forEach(row => {
       const current = String(row.cleanedValues[profile.name] ?? UNKNOWN);
       const replacement = replacementByValue.get(current);
       if (!replacement) return;
-      row.cleanedValues[profile.name] = replacement;
+      row.cleanedValues[profile.name] = replacement.value;
       row.rowSignature = signatureFor(row.cleanedValues);
-      row.changes.push({ column: profile.name, from: current, to: replacement, reason: "Merged a high-confidence near-duplicate category" });
+      row.changes.push({ column: profile.name, from: current, to: replacement.value, reason: replacement.reason });
       stats.fuzzyCategoryRows++;
-      aliasGroups.add(`${profile.name}\u0000${replacement}`);
+      aliasGroups.add(`${profile.name}\u0000${replacement.value}`);
       changedRows.add(row.rowNumber);
     });
   }
