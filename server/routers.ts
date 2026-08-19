@@ -3,7 +3,7 @@ import { z } from "zod";
 import { createCandidateReferral } from "./db";
 import { createKpiImport, getAllImportRows, getImportAggregates, getKpiImport, getPreviewPage, resetKpiImportData, updateKpiImport } from "./kpiImportDb";
 import { createImportUploadUrl, getImportObjectInfo } from "./kpiImportStorage";
-import { applyImportReviewAction, processKpiImport, recalculateKpiImport, selectKpiImportMetric } from "./kpiImportWorker";
+import { applyImportReviewAction, processKpiImport, recalculateKpiImport, selectKpiImportMetric, setKpiImportCurrency } from "./kpiImportWorker";
 import { invokeLLM } from "./_core/llm";
 import { fallbackAnalystAnswer, type AnalystContext } from "./kpiAnalyst";
 import { answerPeterQuery, isAnswerablePeterSuggestion, peterSuggestionSignature, planPeterQuestion, resolvePeterPlanWithAi } from "./kpiAnalystQuery";
@@ -146,6 +146,13 @@ export const appRouter = router({
         await updateKpiImport(input.importId, { status: "failed", errorMessage, completedAt: new Date() });
         throw new Error(errorMessage);
       }
+    }),
+    setCurrency: protectedProcedure.input(z.object({ importId: z.string().uuid(), currencyCode: z.string().trim().length(3).transform(value => value.toUpperCase()) })).mutation(async ({ input, ctx }) => {
+      const job = await getKpiImport(input.importId, ctx.user.openId);
+      if (!job) throw new Error("Import job was not found.");
+      if (job.status !== "complete") throw new Error("This import is not ready for currency selection.");
+      const analysis = await setKpiImportCurrency(input.importId, input.currencyCode);
+      return { importId: input.importId, status: "complete" as const, analysis };
     }),
     selectMetric: protectedProcedure.input(z.object({ importId: z.string().uuid(), metricName: z.string().trim().min(1).max(255) })).mutation(async ({ input, ctx }) => {
       const job = await getKpiImport(input.importId, ctx.user.openId);

@@ -81,6 +81,10 @@ export type KpiAnalysis = {
   metric: string;
   metricLabel: string;
   currencySymbol: string;
+  /** ISO 4217 display currency; optional for analyses saved before currency selection existed. */
+  currencyCode?: string;
+  /** Whether the display currency was detected from source values, defaulted, or explicitly selected. */
+  currencySource?: "detected" | "default" | "manual";
   dateColumn: string;
   previousPeriod: string;
   currentPeriod: string;

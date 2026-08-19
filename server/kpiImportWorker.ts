@@ -3,6 +3,7 @@ import { Readable } from "node:stream";
 import ExcelJS from "exceljs";
 import { parse } from "csv-parse";
 import { longReadablePeriod, type KpiAnalysis } from "../shared/kpiEngine";
+import { DEFAULT_CURRENCY_CODE, currencySymbolForCode, detectCurrencyFromValues, normaliseCurrencyCode, type CurrencyDetection } from "../shared/kpiCurrency";
 import {
   claimNextQueuedImport,
   clearImportAggregates,
@@ -566,7 +567,7 @@ type AnalysisAggregate = {
   recordCount: number | bigint;
 };
 
-function analysisFromAggregates(input: { aggregates: AnalysisAggregate[]; profiles: ColumnProfile[]; usableRows: number }): KpiAnalysis {
+function analysisFromAggregates(input: { aggregates: AnalysisAggregate[]; profiles: ColumnProfile[]; usableRows: number; currency?: CurrencyDetection }): KpiAnalysis {
   const metric = findMetric(input.profiles);
   const date = findDate(input.profiles);
   if (!metric || !date) throw new Error("We could not identify both a reliable date column and numeric KPI. Ensure at least 75% of non-empty values in each field are valid dates or amounts.");
@@ -612,7 +613,8 @@ function analysisFromAggregates(input: { aggregates: AnalysisAggregate[]; profil
   const summary = primary
     ? `${metric.name} ${direction} ${Math.abs(changePercent).toFixed(1)}% from ${longReadablePeriod(previousPeriod)} to ${longReadablePeriod(currentPeriod)}. The largest contributor was ${primary.dimension}: ${primary.value}. We are ${confidence}% confident in this explanation. If it had stayed flat, ${metric.name.toLowerCase()} would have been about ${(primary.counterfactual).toLocaleString(undefined, { maximumFractionDigits: 0 })}.`
     : `${metric.name} ${direction} ${Math.abs(changePercent).toFixed(1)}% from ${longReadablePeriod(previousPeriod)} to ${longReadablePeriod(currentPeriod)}. No material categorical driver was identified.`;
-  return { metric: metric.name, metricLabel: metric.label ?? metric.name, currencySymbol: /revenue|sales|amount|value|income|turnover|purchase|spend|price|cost|profit/i.test(metric.name) || Boolean(metric.metricRecipe) ? "$" : "", dateColumn: date.name, previousPeriod, currentPeriod, previousTotal, currentTotal, change, changePercent, excludedMetricRows: 0, trend: periods.slice(-8).map(period => ({ period, total: totals.get(period) ?? 0 })), causes, offsettingCauses, confidence, summary, totalRowsUsed: input.usableRows };
+  const currency = input.currency ?? { currencyCode: DEFAULT_CURRENCY_CODE, currencySymbol: currencySymbolForCode(DEFAULT_CURRENCY_CODE), currencySource: "default" as const, detected: false };
+  return { metric: metric.name, metricLabel: metric.label ?? metric.name, currencySymbol: currency.currencySymbol, currencyCode: currency.currencyCode, currencySource: currency.currencySource, dateColumn: date.name, previousPeriod, currentPeriod, previousTotal, currentTotal, change, changePercent, excludedMetricRows: 0, trend: periods.slice(-8).map(period => ({ period, total: totals.get(period) ?? 0 })), causes, offsettingCauses, confidence, summary, totalRowsUsed: input.usableRows };
 }
 
 function fullCauseImpact(aggregates: AnalysisAggregate[], metricColumn: string, dimension: string, value: string, previousPeriod: string, currentPeriod: string) {
@@ -626,8 +628,9 @@ function fullCauseImpact(aggregates: AnalysisAggregate[], metricColumn: string, 
   return current - previous;
 }
 
-const logsFromStats = (stats: WorkerStats, metric?: ColumnProfile) => [
+const logsFromStats = (stats: WorkerStats, metric?: ColumnProfile, currency?: CurrencyDetection) => [
   ...(metric ? [{ key: "metric", title: "KPI selected", detail: metric.selectionReason ?? `Selected ${metric.label ?? metric.name} as the KPI.`, count: 1, severity: "success" as const }] : []),
+  ...(currency ? [{ key: "currency", title: "Display currency", detail: currency.detected ? `${currency.currencyCode} was detected from the uploaded KPI values. You can change this display setting at any time; values are not converted.` : `Currency was not detected, so display defaults to ${currency.currencyCode}. You can change this display setting at any time; values are not converted.`, count: 1, severity: currency.detected ? "success" as const : "info" as const }] : []),
   { key: "duplicates", title: "Exact duplicates excluded", detail: "Exact cleaned-row duplicates are retained for review but excluded from the default calculation.", count: stats.exactDuplicates, severity: stats.exactDuplicates ? "success" : "info" },
   { key: "possible", title: "Possible duplicates flagged", detail: "Rows sharing a company or customer, date, and KPI value are kept for your decision.", count: stats.possibleDuplicates, severity: stats.possibleDuplicates ? "warning" : "info" },
   { key: "fuzzy", title: "High-confidence category alias groups", detail: `${stats.fuzzyCategoryRows.toLocaleString()} individual category cells were reconciled across ${stats.fuzzyCategoryMerges.toLocaleString()} distinct alias group${stats.fuzzyCategoryMerges === 1 ? "" : "s"}.`, count: stats.fuzzyCategoryMerges, severity: stats.fuzzyCategoryMerges ? "success" : "info" },
@@ -806,11 +809,27 @@ async function writeAggregateMap(importId: string, aggregateMap: Map<string, Agg
   for (let index = 0; index < aggregates.length; index += BATCH_SIZE) await writeImportAggregates(importId, aggregates.slice(index, index + BATCH_SIZE));
 }
 
+const displayCurrencyForRows = (rows: ReviewRow[], metric: ColumnProfile, existingAnalysis: unknown): CurrencyDetection => {
+  const existing = asRecord(existingAnalysis);
+  const manualCode = existing.currencySource === "manual" ? normaliseCurrencyCode(text(existing.currencyCode)) : null;
+  if (manualCode) return { currencyCode: manualCode, currencySymbol: currencySymbolForCode(manualCode), currencySource: "manual", detected: true };
+  const metricValues = metric.metricRecipe
+    ? rows.map(row => row.rawValues[metric.metricRecipe!.unitValueColumn])
+    : rows.map(row => row.rawValues[metric.name]);
+  const explicitCurrencyValues = rows.flatMap(row => Object.entries(row.rawValues)
+    .filter(([column]) => /(?:^|[_\s-])(?:currency|currency code|ccy)(?:$|[_\s-])/i.test(column))
+    .map(([, value]) => value));
+  return detectCurrencyFromValues([...metricValues, ...explicitCurrencyValues]);
+};
+
 async function recalculateFromStoredRows(importId: string, profiles: ColumnProfile[]) {
+  const job = await getKpiImport(importId);
+  if (!job) throw new Error("Import job was not found.");
   const rows = toReviewRows(await getAllImportRows(importId));
   const metric = findMetric(profiles);
   const date = findDate(profiles);
   if (!metric || !date) throw new Error("The import no longer has a reliable numeric KPI and date column.");
+  const currency = displayCurrencyForRows(rows, metric, job.analysisJson);
   const buildAggregateMap = (includeOutliers: boolean) => {
     const aggregateMap = new Map<string, AggregateWrite>();
     let usableRows = 0;
@@ -836,13 +855,13 @@ async function recalculateFromStoredRows(importId: string, profiles: ColumnProfi
     possibleDuplicates: rows.filter(row => row.possibleDuplicate).length,
     outliers: rows.filter(row => row.isOutlier).length,
   };
-  const baselineAnalysis = analysisFromAggregates({ aggregates: Array.from(baseline.aggregateMap.values()), profiles, usableRows: baseline.usableRows });
+  const baselineAnalysis = analysisFromAggregates({ aggregates: Array.from(baseline.aggregateMap.values()), profiles, usableRows: baseline.usableRows, currency });
   const flaggedOutliers = rows.filter(row => !row.excluded && row.isOutlier);
   let analysis = baselineAnalysis;
   if (flaggedOutliers.length) {
     try {
       const withoutOutliers = buildAggregateMap(false);
-      const outlierExcludedAnalysis = analysisFromAggregates({ aggregates: Array.from(withoutOutliers.aggregateMap.values()), profiles, usableRows: withoutOutliers.usableRows });
+      const outlierExcludedAnalysis = analysisFromAggregates({ aggregates: Array.from(withoutOutliers.aggregateMap.values()), profiles, usableRows: withoutOutliers.usableRows, currency });
       const baselinePrimary = baselineAnalysis.causes[0] ?? null;
       const outlierExcludedPrimary = outlierExcludedAnalysis.causes[0] ?? null;
       const baselinePrimaryWithoutOutliers = baselinePrimary ? fullCauseImpact(Array.from(withoutOutliers.aggregateMap.values()), metric.name, baselinePrimary.dimension, baselinePrimary.value, baselineAnalysis.previousPeriod, baselineAnalysis.currentPeriod) : 0;
@@ -871,7 +890,7 @@ async function recalculateFromStoredRows(importId: string, profiles: ColumnProfi
       // Preserve the baseline if removing outliers leaves too little period coverage for a valid comparison.
     }
   }
-  await updateKpiImport(importId, { status: "complete", sourceRowCount: rows.length, usableRowCount: baseline.usableRows, previewRowCount: rows.length, columnsJson: profiles, cleaningSummaryJson: logsFromStats(stats, metric), analysisJson: analysis, workerCheckpointJson: { phase: "complete", processedRows: rows.length, recalculated: true }, completedAt: new Date() });
+  await updateKpiImport(importId, { status: "complete", sourceRowCount: rows.length, usableRowCount: baseline.usableRows, previewRowCount: rows.length, columnsJson: profiles, cleaningSummaryJson: logsFromStats(stats, metric, currency), analysisJson: analysis, workerCheckpointJson: { phase: "complete", processedRows: rows.length, recalculated: true }, completedAt: new Date() });
   return analysis;
 }
 
@@ -993,6 +1012,20 @@ export async function recalculateKpiImport(importId: string) {
   return recalculateFromStoredRows(importId, profiles);
 }
 
+export async function setKpiImportCurrency(importId: string, currencyCode: string) {
+  const job = await getKpiImport(importId);
+  if (!job) throw new Error("Import job was not found.");
+  const code = normaliseCurrencyCode(currencyCode);
+  if (!code) throw new Error("Choose a valid ISO 4217 currency code.");
+  const current = asRecord(job.analysisJson);
+  if (!current.metric || !current.dateColumn) throw new Error("This import does not yet have a complete analysis.");
+  const analysis = { ...current, currencyCode: code, currencySymbol: currencySymbolForCode(code), currencySource: "manual" } as KpiAnalysis;
+  const existingSummary = asArray<Record<string, unknown>>(job.cleaningSummaryJson).filter(item => item.key !== "currency");
+  existingSummary.splice(1, 0, { key: "currency", title: "Display currency", detail: `${code} was selected manually for display. Values are not converted.`, count: 1, severity: "success" });
+  await updateKpiImport(importId, { analysisJson: analysis, cleaningSummaryJson: existingSummary });
+  return analysis;
+}
+
 export async function selectKpiImportMetric(importId: string, metricName: string) {
   const job = await getKpiImport(importId);
   if (!job) throw new Error("Import job was not found.");
@@ -1029,6 +1062,7 @@ export const __kpiImportWorkerTesting = {
   findDate,
   applyMetricSelection,
   analysisFromAggregates,
+  displayCurrencyForRows,
   parseDate,
   parseExcelSerialDate,
   parseUnixTimestamp,
