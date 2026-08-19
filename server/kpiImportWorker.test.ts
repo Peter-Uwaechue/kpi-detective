@@ -287,3 +287,50 @@ it("handles a different month-first operational window with numeric date-times, 
   expect(date).toMatchObject({ name: "InvoiceDate", kind: "date", datePreference: "month-first" });
   expect(cleaned.map(row => row.cleanedValues.InvoiceDate)).toEqual(["2025-01-31", "2025-01-30", "2025-01-31", "2025-02-01", "2025-02-14"]);
 });
+
+
+it("keeps unique dates, unique identifiers, and unique monetary values in their correct classifier lanes", () => {
+  const rows: RawRecord[] = Array.from({ length: 12 }, (_, index) => ({
+    order_date: index % 3 === 0 ? `1/${20 + index}/2021` : index % 3 === 1 ? `10/${index + 1}/2026` : `2026-10-${String(index + 1).padStart(2, "0")} 09:30:00`,
+    event_time: `2026-10-${String(index + 1).padStart(2, "0")}T09:30:00`,
+    order_id: `ORD-${10001 + index}`,
+    invoice_no: `INV-${20001 + index}`,
+    stock_code: `SKU-${30001 + index}`,
+    customer_id: String(40001 + index),
+    revenue_usd: String(100.25 + index * 37.5),
+    unit_price: String(1.5 + index / 10),
+    quantity: String(index + 1),
+    region: index % 2 ? "North" : "South",
+  }));
+  const profiles = __kpiImportWorkerTesting.inferProfiles(Object.keys(rows[0]!), rows);
+  const profileByName = new Map(profiles.map(profile => [profile.name, profile]));
+
+  expect(profileByName.get("order_date")).toMatchObject({ kind: "date" });
+  expect(profileByName.get("event_time")).toMatchObject({ kind: "date" });
+  expect(profileByName.get("order_id")).toMatchObject({ kind: "identifier" });
+  expect(profileByName.get("invoice_no")).toMatchObject({ kind: "identifier" });
+  expect(profileByName.get("stock_code")).toMatchObject({ kind: "identifier" });
+  expect(profileByName.get("customer_id")).toMatchObject({ kind: "identifier" });
+  expect(profileByName.get("revenue_usd")).toMatchObject({ kind: "number", isSelectedMetric: true });
+  expect(profileByName.get("unit_price")).toMatchObject({ kind: "number" });
+  expect(profileByName.get("quantity")).toMatchObject({ kind: "number" });
+  expect(profileByName.get("region")).toMatchObject({ kind: "category" });
+});
+
+it("does not misread identifier strings with year-like digits as dates", () => {
+  const rows: RawRecord[] = Array.from({ length: 12 }, (_, index) => ({
+    order_id: `ORD-${10001 + index}`,
+    transaction_code: `TXN-${20260101 + index}`,
+    reference: `REF-2026-${100 + index}`,
+    created_at: `2026-11-${String(index + 1).padStart(2, "0")} 08:00:00`,
+    amount: String(50 + index),
+  }));
+  const profiles = __kpiImportWorkerTesting.inferProfiles(Object.keys(rows[0]!), rows);
+  const profileByName = new Map(profiles.map(profile => [profile.name, profile]));
+
+  expect(profileByName.get("order_id")).toMatchObject({ kind: "identifier" });
+  expect(profileByName.get("transaction_code")).toMatchObject({ kind: "identifier" });
+  expect(profileByName.get("reference")).toMatchObject({ kind: "identifier" });
+  expect(profileByName.get("created_at")).toMatchObject({ kind: "date" });
+  expect(profileByName.get("amount")).toMatchObject({ kind: "number", isSelectedMetric: true });
+});

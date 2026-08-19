@@ -157,16 +157,15 @@ const parseDate = (value: unknown, preference: DatePreference = "ambiguous", con
     }
     return null;
   }
-  const namedDayFirst = raw.match(/^(\d{1,2})\s*[- ]\s*([A-Za-z]{3,9})\s*[-, ]\s*(\d{2,4})$/);
-  const namedMonthFirst = raw.match(/^([A-Za-z]{3,9})\s+(\d{1,2}),?\s+(\d{2,4})$/);
+  const namedDayFirst = raw.match(/^(\d{1,2})\s*[- ]\s*([A-Za-z]{3,9})\s*[-, ]\s*(\d{2,4})(?:[T\s]+\d{1,2}:\d{2}(?::\d{2})?)?$/);
+  const namedMonthFirst = raw.match(/^([A-Za-z]{3,9})\s+(\d{1,2}),?\s+(\d{2,4})(?:[T\s]+\d{1,2}:\d{2}(?::\d{2})?)?$/);
   if (namedDayFirst || namedMonthFirst) {
     const parsed = Date.parse(raw);
     return Number.isNaN(parsed) ? null : new Date(parsed).toISOString().slice(0, 10);
   }
-  const looksLikeDate = (/\d{4}/.test(raw) && /[T\s/.-]/.test(raw)) || (/^[A-Za-z]{3,9}\s+\d{1,2}/.test(raw) && /\d{2,4}/.test(raw));
-  if (!looksLikeDate) return null;
-  const parsed = Date.parse(raw);
-  return Number.isNaN(parsed) ? null : new Date(parsed).toISOString().slice(0, 10);
+  // Do not pass arbitrary identifier-looking strings to Date.parse: engines can
+  // interpret values such as ORD-10001 as a year, producing a false date rate.
+  return null;
 };
 
 const inferDateProfile = (values: unknown[]): { preference: DatePreference; context?: DateContext } => {
@@ -236,7 +235,11 @@ const inferBaseProfiles = (headers: string[], samples: RawRecord[]): ColumnProfi
   const dateHint = headerScore(name, DATE_TERMS);
   const numericHint = headerScore(name, REVENUE_TERMS);
   const explicitIdentifier = IDENTIFIER_PATTERN.test(name);
-  if (!explicitIdentifier && dateRate >= PROFILE_MIN_VALID_RATE && (dateHint > 0 || numericRate < 0.98)) return { name, kind: "date", confidence: Math.round(Math.min(99, dateRate * 88 + dateHint * 5)), datePreference: dateProfile.preference, dateContext: dateProfile.context };
+  const isReliableDate = dateRate >= PROFILE_MIN_VALID_RATE && (dateHint > 0 || numericRate < 0.98);
+  // Values—not header uniqueness—decide whether a date-like column is a date.
+  // Headers such as order_date and transaction_date must not be captured by
+  // the identifier heuristic merely because every date/time is distinct.
+  if (isReliableDate) return { name, kind: "date", confidence: Math.round(Math.min(99, dateRate * 88 + dateHint * 5)), datePreference: dateProfile.preference, dateContext: dateProfile.context };
   const quantityHint = headerScore(name, QUANTITY_TERMS);
   if (explicitIdentifier || (distinctRate > 0.92 && values.length > 7 && /\d/.test(values.map(text).join("")) && numericHint === 0 && quantityHint === 0)) return { name, kind: "identifier", confidence: 82 };
   const categoryHint = headerScore(name, CATEGORY_TERMS);
