@@ -478,3 +478,34 @@ it("keeps multiple strong KPI candidates visible and permits a manual metric sel
   expect(profitSelection.find(profile => profile.name === "order_date")).toMatchObject({ kind: "date" });
   expect(profitSelection.find(profile => profile.name === "order_id")).toMatchObject({ kind: "identifier" });
 });
+
+
+it("separates offsetting positive factors from factors driving an overall KPI decline", () => {
+  const profiles = [
+    { name: "order_date", kind: "date", confidence: 99 },
+    { name: "Revenue", kind: "number", confidence: 99, isSelectedMetric: true, label: "Revenue" },
+    { name: "CustomerAge", kind: "category", confidence: 99 },
+    { name: "Region", kind: "category", confidence: 99 },
+  ];
+  const aggregates = [
+    { metricColumn: "Revenue", period: "2026-01", dimension: "__total__", segment: "__all__", metricTotal: 1_000_000, recordCount: 100 },
+    { metricColumn: "Revenue", period: "2026-02", dimension: "__total__", segment: "__all__", metricTotal: 500_000, recordCount: 100 },
+    { metricColumn: "Revenue", period: "2026-01", dimension: "Region", segment: "North", metricTotal: 700_000, recordCount: 50 },
+    { metricColumn: "Revenue", period: "2026-02", dimension: "Region", segment: "North", metricTotal: 300_000, recordCount: 50 },
+    { metricColumn: "Revenue", period: "2026-01", dimension: "Region", segment: "West", metricTotal: 300_000, recordCount: 50 },
+    { metricColumn: "Revenue", period: "2026-02", dimension: "Region", segment: "West", metricTotal: 0, recordCount: 50 },
+    { metricColumn: "Revenue", period: "2026-01", dimension: "CustomerAge", segment: "38", metricTotal: 10_000, recordCount: 2 },
+    { metricColumn: "Revenue", period: "2026-02", dimension: "CustomerAge", segment: "38", metricTotal: 326_019, recordCount: 2 },
+  ];
+
+  const analysis = __kpiImportWorkerTesting.analysisFromAggregates({ aggregates, profiles, usableRows: 100 });
+  expect(analysis.change).toBe(-500_000);
+  expect(analysis.causes).toEqual(expect.arrayContaining([
+    expect.objectContaining({ dimension: "Region", value: "North", impact: -400_000 }),
+    expect.objectContaining({ dimension: "Region", value: "West", impact: -300_000 }),
+  ]));
+  expect(analysis.causes.every(cause => cause.impact < 0)).toBe(true);
+  expect(analysis.offsettingCauses).toEqual([
+    expect.objectContaining({ dimension: "CustomerAge", value: "38", impact: 316_019 }),
+  ]);
+});

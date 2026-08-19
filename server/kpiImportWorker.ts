@@ -587,7 +587,7 @@ function analysisFromAggregates(input: { aggregates: AnalysisAggregate[]; profil
     existing.periods.set(item.period, Number(item.metricTotal));
     byCause.set(key, existing);
   });
-  const causes = Array.from(byCause.values()).map(cause => {
+  const allCauses = Array.from(byCause.values()).map(cause => {
     const impact = (cause.periods.get(currentPeriod) ?? 0) - (cause.periods.get(previousPeriod) ?? 0);
     const contribution = Math.abs(change) ? Math.min(1, Math.abs(impact) / Math.abs(change)) : 0;
     return {
@@ -602,14 +602,17 @@ function analysisFromAggregates(input: { aggregates: AnalysisAggregate[]; profil
       counterfactual: currentTotal - impact,
       trend: periods.slice(-8).map(period => ({ period, total: cause.periods.get(period) ?? 0 })),
     };
-  }).filter(cause => Math.abs(cause.impact) > 0).sort((a, b) => Math.abs(b.impact) - Math.abs(a.impact)).slice(0, 5);
+  }).filter(cause => Math.abs(cause.impact) > 0).sort((a, b) => Math.abs(b.impact) - Math.abs(a.impact));
+  const sameDirectionCauses = change === 0 ? allCauses : allCauses.filter(cause => Math.sign(cause.impact) === Math.sign(change));
+  const causes = (sameDirectionCauses.length ? sameDirectionCauses : allCauses).slice(0, 5);
+  const offsettingCauses = change === 0 ? [] : allCauses.filter(cause => Math.sign(cause.impact) !== Math.sign(change)).slice(0, 3);
   const primary = causes[0];
   const confidence = primary?.confidence ?? 50;
   const direction = change < 0 ? "decreased" : "increased";
   const summary = primary
     ? `${metric.name} ${direction} ${Math.abs(changePercent).toFixed(1)}% from ${longReadablePeriod(previousPeriod)} to ${longReadablePeriod(currentPeriod)}. The largest contributor was ${primary.dimension}: ${primary.value}. We are ${confidence}% confident in this explanation. If it had stayed flat, ${metric.name.toLowerCase()} would have been about ${(primary.counterfactual).toLocaleString(undefined, { maximumFractionDigits: 0 })}.`
     : `${metric.name} ${direction} ${Math.abs(changePercent).toFixed(1)}% from ${longReadablePeriod(previousPeriod)} to ${longReadablePeriod(currentPeriod)}. No material categorical driver was identified.`;
-  return { metric: metric.name, metricLabel: metric.label ?? metric.name, currencySymbol: /revenue|sales|amount|value|income|turnover|purchase|spend|price|cost|profit/i.test(metric.name) || Boolean(metric.metricRecipe) ? "$" : "", dateColumn: date.name, previousPeriod, currentPeriod, previousTotal, currentTotal, change, changePercent, excludedMetricRows: 0, trend: periods.slice(-8).map(period => ({ period, total: totals.get(period) ?? 0 })), causes, confidence, summary, totalRowsUsed: input.usableRows };
+  return { metric: metric.name, metricLabel: metric.label ?? metric.name, currencySymbol: /revenue|sales|amount|value|income|turnover|purchase|spend|price|cost|profit/i.test(metric.name) || Boolean(metric.metricRecipe) ? "$" : "", dateColumn: date.name, previousPeriod, currentPeriod, previousTotal, currentTotal, change, changePercent, excludedMetricRows: 0, trend: periods.slice(-8).map(period => ({ period, total: totals.get(period) ?? 0 })), causes, offsettingCauses, confidence, summary, totalRowsUsed: input.usableRows };
 }
 
 function fullCauseImpact(aggregates: AnalysisAggregate[], metricColumn: string, dimension: string, value: string, previousPeriod: string, currentPeriod: string) {
@@ -858,6 +861,7 @@ async function recalculateFromStoredRows(importId: string, profiles: ColumnProfi
         analysis = {
           ...baselineAnalysis,
           causes: outlierExcludedAnalysis.causes,
+          offsettingCauses: outlierExcludedAnalysis.offsettingCauses,
           confidence,
           outlierSensitivity,
           summary: `${baselineAnalysis.metric} ${baselineAnalysis.change < 0 ? "decreased" : "increased"} ${Math.abs(baselineAnalysis.changePercent).toFixed(1)}% from ${longReadablePeriod(baselineAnalysis.previousPeriod)} to ${longReadablePeriod(baselineAnalysis.currentPeriod)} when all transactions are included. However, ${flaggedOutliers.length} IQR-flagged transaction${flaggedOutliers.length === 1 ? "" : "s"} materially change the driver ranking. ${baselinePrimary.dimension}: ${baselinePrimary.value} has an all-transaction impact of ${baselinePrimary.impact.toLocaleString(undefined, { maximumFractionDigits: 0 })}, but ${baselinePrimaryWithoutOutliers.toLocaleString(undefined, { maximumFractionDigits: 0 })} without flagged transactions. The driver view therefore uses the outlier-excluded sensitivity result, led by ${outlierExcludedPrimary.dimension}: ${outlierExcludedPrimary.value}.`,
@@ -1024,6 +1028,7 @@ export const __kpiImportWorkerTesting = {
   findMetric,
   findDate,
   applyMetricSelection,
+  analysisFromAggregates,
   parseDate,
   parseExcelSerialDate,
   parseUnixTimestamp,

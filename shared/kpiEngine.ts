@@ -92,6 +92,8 @@ export type KpiAnalysis = {
   excludedMetricRows: number;
   trend: TrendPoint[];
   causes: CauseCard[];
+  /** Factors moving opposite to the overall KPI change; shown separately as offsets. */
+  offsettingCauses?: CauseCard[];
   confidence: number;
   summary: string;
   outlierSensitivity?: OutlierSensitivity;
@@ -516,6 +518,10 @@ export function investigateKpi(dataset: CleanedDataset, sourceRows: Record<strin
   const causes = (directionAlignedCauses.length ? directionAlignedCauses : materialCauses)
     .sort((first, second) => Math.abs(second.impact) - Math.abs(first.impact) || dimensionPriority(first.dimension) - dimensionPriority(second.dimension) || first.value.localeCompare(second.value))
     .slice(0, 5);
+  const offsettingCauses = change === 0 ? [] : materialCauses
+    .filter(cause => Math.sign(cause.impact) !== Math.sign(change))
+    .sort((first, second) => Math.abs(second.impact) - Math.abs(first.impact) || dimensionPriority(first.dimension) - dimensionPriority(second.dimension) || first.value.localeCompare(second.value))
+    .slice(0, 3);
   const weightedConfidence = causes.length ? Math.round(causes.reduce((sum, cause) => sum + cause.confidence * cause.shareOfChange, 0) / causes.reduce((sum, cause) => sum + cause.shareOfChange, 0)) : 50;
   const currencySymbol = sourceRows.length ? findCurrencySymbol(sourceRows, metric.name) : "";
   const name = metric.name.replace(/[_-]+/g, " ").replace(/\b\w/g, letter => letter.toUpperCase());
@@ -542,6 +548,7 @@ export function investigateKpi(dataset: CleanedDataset, sourceRows: Record<strin
     excludedMetricRows: eligible.length - used.length,
     trend: periods.slice(-12).map(period => ({ period, total: sumMetric(used.filter(row => String(row.values[date.name]).slice(0, 7) === period), metric.name) })),
     causes,
+    offsettingCauses,
     confidence: weightedConfidence,
     summary,
   };

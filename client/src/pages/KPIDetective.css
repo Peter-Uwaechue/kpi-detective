@@ -308,3 +308,14 @@
 .kpi-selection-action > span { max-width: 470px; }
 .kpi-selection-action .secondary-action { flex: 0 0 auto; }
 @media (max-width: 640px) { .kpi-candidate-panel { padding: 16px; }.kpi-candidate-heading, .kpi-selection-action { align-items: flex-start; flex-direction: column; }.kpi-candidate-list { grid-template-columns: 1fr; }.kpi-selection-action .secondary-action { width: 100%; }.kpi-candidate-heading > span { margin-top: -4px; } }
+
+
+.offsetting-section { margin-top: 34px; padding: 23px; border: 1px solid #c9dce5; border-radius: 18px; background: linear-gradient(135deg, #f4f9fb, var(--card)); }
+.offsetting-section .section-heading { margin-bottom: 2px; }
+.offsetting-section .eyebrow { color: #2a7087; }
+.offsetting-section .section-heading p { color: #52717d; }
+.offsetting-grid { margin-top: 20px; }
+.dark-mode .offsetting-section { border-color: #365968; background: linear-gradient(135deg, #18333e, var(--card)); }
+.dark-mode .offsetting-section .eyebrow { color: #9ed5e4; }
+.dark-mode .offsetting-section .section-heading p { color: #b1cbd3; }
+@media (max-width: 640px) { .offsetting-section { padding: 17px; margin-top: 28px; } }
