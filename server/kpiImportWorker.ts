@@ -27,6 +27,7 @@ const PROFILE_MIN_VALID_RATE = 0.75;
 const MAX_FUZZY_CATEGORY_VALUES = 400;
 const REVENUE_TERMS = ["revenue", "sales", "amount", "total", "value", "gmv", "income", "turnover", "net", "purchase", "spend", "price", "cost", "profit"];
 const DIRECT_KPI_TERMS = ["revenue", "sales", "amount", "total", "value", "gmv", "income", "turnover", "net", "purchase", "spend", "profit"];
+const KPI_CANDIDATE_TERMS = [...REVENUE_TERMS, "loss", "losses", "margin", "expense", "expenses", "balance", "volume", "units", "quantity", "orders", "count"];
 const QUANTITY_TERMS = ["quantity", "qty", "units", "unit count", "items", "volume"];
 const UNIT_PRICE_TERMS = ["unit price", "unitprice", "price", "rate"];
 const COST_TERMS = ["unit cost", "unitcost", "cost"];
@@ -69,6 +70,8 @@ type ColumnProfile = {
   acceptsUnixTimestamps?: boolean;
   dateRecipe?: DateRecipe;
   isSelectedMetric?: boolean;
+  isMetricCandidate?: boolean;
+  candidateReason?: string;
   label?: string;
   selectionReason?: string;
   metricRecipe?: MetricRecipe;
@@ -311,6 +314,7 @@ const inferBaseProfiles = (headers: string[], samples: RawRecord[]): ColumnProfi
   const dateRate = values.filter(value => parseDate(value, dateProfile.preference, dateProfile.context, acceptsExcelSerialDates, acceptsUnixTimestamps) !== null).length / values.length;
   const distinctRate = new Set(values.map(text)).size / values.length;
   const numericHint = headerScore(name, REVENUE_TERMS);
+  const candidateMetricHint = headerScore(name, KPI_CANDIDATE_TERMS);
   const explicitIdentifier = IDENTIFIER_PATTERN.test(name);
   const isReliableDate = dateRate >= PROFILE_MIN_VALID_RATE && (dateHint > 0 || numericRate < 0.98);
   // Values—not header uniqueness—decide whether a date-like column is a date.
@@ -318,7 +322,7 @@ const inferBaseProfiles = (headers: string[], samples: RawRecord[]): ColumnProfi
   // the identifier heuristic merely because every date/time is distinct.
   if (isReliableDate) return { name, kind: "date", confidence: Math.round(Math.min(99, dateRate * 88 + dateHint * 5)), datePreference: dateProfile.preference, dateContext: dateProfile.context, acceptsExcelSerialDates: acceptsExcelSerialDates || undefined, acceptsUnixTimestamps: acceptsUnixTimestamps || undefined };
   const quantityHint = headerScore(name, QUANTITY_TERMS);
-  if (explicitIdentifier || (distinctRate > 0.92 && values.length > 7 && /\d/.test(values.map(text).join("")) && numericHint === 0 && quantityHint === 0)) return { name, kind: "identifier", confidence: 82 };
+  if (explicitIdentifier || (distinctRate > 0.92 && values.length > 7 && /\d/.test(values.map(text).join("")) && numericHint === 0 && candidateMetricHint === 0 && quantityHint === 0)) return { name, kind: "identifier", confidence: 82 };
   const categoryHint = headerScore(name, CATEGORY_TERMS);
   if (categoryHint > 0 && numericHint === 0) return { name, kind: "category", confidence: Math.round(Math.min(95, 70 + categoryHint * 6)) };
   if (numericRate >= PROFILE_MIN_VALID_RATE) return { name, kind: "number", confidence: Math.round(Math.min(99, numericRate * 88 + numericHint * 5)) };
@@ -328,21 +332,26 @@ const inferBaseProfiles = (headers: string[], samples: RawRecord[]): ColumnProfi
 
 const headerMatches = (name: string, terms: string[]) => terms.some(term => normalise(name) === term || normalise(name).includes(term));
 
+const deriveMetricProfile = (profiles: ColumnProfile[]): ColumnProfile | null => {
+  const numeric = profiles.filter(profile => profile.kind === "number");
+  const quantity = numeric.filter(profile => headerMatches(profile.name, QUANTITY_TERMS)).sort((left, right) => headerScore(right.name, QUANTITY_TERMS) - headerScore(left.name, QUANTITY_TERMS))[0];
+  const unitPrice = numeric.filter(profile => headerMatches(profile.name, UNIT_PRICE_TERMS)).sort((left, right) => headerScore(right.name, UNIT_PRICE_TERMS) - headerScore(left.name, UNIT_PRICE_TERMS))[0];
+  const unitCost = numeric.filter(profile => headerMatches(profile.name, COST_TERMS)).sort((left, right) => headerScore(right.name, COST_TERMS) - headerScore(left.name, COST_TERMS))[0];
+  if (!quantity || !(unitPrice || unitCost)) return null;
+  const unitValue = unitPrice ?? unitCost!;
+  const discount = numeric.find(profile => headerMatches(profile.name, DISCOUNT_TERMS));
+  const tax = numeric.find(profile => headerMatches(profile.name, TAX_TERMS));
+  const recipe: MetricRecipe = { kind: unitPrice ? "quantity_times_price" : "quantity_times_cost", quantityColumn: quantity.name, unitValueColumn: unitValue.name, ...(discount ? { discountColumn: discount.name } : {}), ...(tax ? { taxColumn: tax.name } : {}) };
+  const adjustments = [discount && `less ${discount.name}`, tax && `plus ${tax.name}`].filter(Boolean).join("; ");
+  return { name: "__derived_amount__", kind: "number", confidence: Math.min(quantity.confidence, unitValue.confidence), label: "Derived Amount", selectionReason: `Calculated as ${quantity.name} × ${unitValue.name}${adjustments ? `; ${adjustments}` : ""}.`, metricRecipe: recipe };
+};
+
 const selectMetricProfile = (profiles: ColumnProfile[]): ColumnProfile | null => {
   const numeric = profiles.filter(profile => profile.kind === "number");
   const direct = numeric.filter(profile => headerMatches(profile.name, DIRECT_KPI_TERMS)).sort((left, right) => headerScore(right.name, DIRECT_KPI_TERMS) - headerScore(left.name, DIRECT_KPI_TERMS) || right.confidence - left.confidence)[0];
   if (direct) return { ...direct, isSelectedMetric: true, label: direct.name, selectionReason: `Selected the labelled monetary column “${direct.name}”.` };
-  const quantity = numeric.filter(profile => headerMatches(profile.name, QUANTITY_TERMS)).sort((left, right) => headerScore(right.name, QUANTITY_TERMS) - headerScore(left.name, QUANTITY_TERMS))[0];
-  const unitPrice = numeric.filter(profile => headerMatches(profile.name, UNIT_PRICE_TERMS)).sort((left, right) => headerScore(right.name, UNIT_PRICE_TERMS) - headerScore(left.name, UNIT_PRICE_TERMS))[0];
-  const unitCost = numeric.filter(profile => headerMatches(profile.name, COST_TERMS)).sort((left, right) => headerScore(right.name, COST_TERMS) - headerScore(left.name, COST_TERMS))[0];
-  if (quantity && (unitPrice || unitCost)) {
-    const unitValue = unitPrice ?? unitCost!;
-    const discount = numeric.find(profile => headerMatches(profile.name, DISCOUNT_TERMS));
-    const tax = numeric.find(profile => headerMatches(profile.name, TAX_TERMS));
-    const recipe: MetricRecipe = { kind: unitPrice ? "quantity_times_price" : "quantity_times_cost", quantityColumn: quantity.name, unitValueColumn: unitValue.name, ...(discount ? { discountColumn: discount.name } : {}), ...(tax ? { taxColumn: tax.name } : {}) };
-    const adjustments = [discount && `less ${discount.name}`, tax && `plus ${tax.name}`].filter(Boolean).join("; ");
-    return { name: "__derived_amount__", kind: "number", confidence: Math.min(quantity.confidence, unitValue.confidence), isSelectedMetric: true, label: "Derived Amount", selectionReason: `Calculated as ${quantity.name} × ${unitValue.name}${adjustments ? `; ${adjustments}` : ""}.`, metricRecipe: recipe };
-  }
+  const derived = deriveMetricProfile(profiles);
+  if (derived) return { ...derived, isSelectedMetric: true };
   const fallback = numeric.filter(profile => !headerMatches(profile.name, QUANTITY_TERMS) && !headerMatches(profile.name, DISCOUNT_TERMS) && !headerMatches(profile.name, TAX_TERMS)).sort((left, right) => headerScore(right.name, REVENUE_TERMS) - headerScore(left.name, REVENUE_TERMS) || right.confidence - left.confidence || left.name.localeCompare(right.name))[0];
   return fallback ? { ...fallback, isSelectedMetric: true, label: fallback.name, selectionReason: `No labelled monetary total or complete quantity-price pair was found; selected the highest-confidence usable numeric column “${fallback.name}”.` } : null;
 };
@@ -373,15 +382,43 @@ const deriveYearMonthDayProfile = (headers: string[], samples: RawRecord[]): Col
   };
 };
 
+const metricCandidateReason = (profile: ColumnProfile) => {
+  if (profile.metricRecipe) return profile.selectionReason ?? `Calculated as ${profile.label ?? profile.name}.`;
+  if (headerMatches(profile.name, DIRECT_KPI_TERMS)) return `Strong monetary KPI signal from the “${profile.name}” header.`;
+  if (headerMatches(profile.name, QUANTITY_TERMS)) return `Usable numeric quantity or volume field (${profile.confidence}% valid values).`;
+  return `Usable numeric field (${profile.confidence}% valid values).`;
+};
+
+const markMetricCandidates = (profiles: ColumnProfile[], selectedMetric: ColumnProfile | null, derivedMetric: ColumnProfile | null) => {
+  const selectedName = selectedMetric?.name;
+  const annotatedProfiles = profiles.map(profile => {
+    if (profile.kind !== "number" || profile.confidence < PROFILE_MIN_VALID_RATE * 100) return profile;
+    return { ...profile, isMetricCandidate: true, candidateReason: metricCandidateReason(profile), isSelectedMetric: profile.name === selectedName, ...(profile.name === selectedName ? { label: selectedMetric?.label ?? profile.label ?? profile.name, selectionReason: selectedMetric?.selectionReason ?? profile.selectionReason } : {}) };
+  });
+  const derived = derivedMetric ? { ...derivedMetric, isSelectedMetric: selectedName === derivedMetric.name, isMetricCandidate: true, candidateReason: metricCandidateReason(derivedMetric) } : null;
+  return [...annotatedProfiles, ...(derived ? [derived] : [])];
+};
+
+const applyMetricSelection = (profiles: ColumnProfile[], metricName: string) => {
+  const candidate = profiles.find(profile => profile.isMetricCandidate && profile.kind === "number" && profile.name === metricName);
+  if (!candidate) throw new Error("That KPI column is not available for this import.");
+  return profiles.map(profile => {
+    if (!profile.isMetricCandidate || profile.kind !== "number") return profile;
+    const selected = profile.name === metricName;
+    return {
+      ...profile,
+      isSelectedMetric: selected,
+      ...(selected ? { label: profile.label ?? profile.name, selectionReason: `Selected manually from ${profiles.filter(item => item.isMetricCandidate && item.kind === "number").length} available KPI candidates.` } : {}),
+    };
+  });
+};
+
 const inferProfiles = (headers: string[], samples: RawRecord[]): ColumnProfile[] => {
   const profiles = inferBaseProfiles(headers, samples);
   const selectedMetric = selectMetricProfile(profiles);
+  const derivedMetric = deriveMetricProfile(profiles);
   const derivedDate = deriveYearMonthDayProfile(headers, samples);
-  return [
-    ...profiles.map(profile => profile.name === selectedMetric?.name ? selectedMetric : profile),
-    ...(selectedMetric?.metricRecipe ? [selectedMetric] : []),
-    ...(derivedDate ? [derivedDate] : []),
-  ];
+  return [...markMetricCandidates(profiles, selectedMetric, derivedMetric), ...(derivedDate ? [derivedDate] : [])];
 };
 
 async function* csvRecords(stream: Readable): AsyncGenerator<RawRecord> {
@@ -952,6 +989,17 @@ export async function recalculateKpiImport(importId: string) {
   return recalculateFromStoredRows(importId, profiles);
 }
 
+export async function selectKpiImportMetric(importId: string, metricName: string) {
+  const job = await getKpiImport(importId);
+  if (!job) throw new Error("Import job was not found.");
+  const profiles = asArray<ColumnProfile>(job.columnsJson);
+  if (!profiles.length) throw new Error("The import has no stored column profile to update.");
+  const selectedProfiles = applyMetricSelection(profiles, metricName);
+  await updateKpiImport(importId, { status: "analyzing", columnsJson: selectedProfiles, errorMessage: null, workerCheckpointJson: { phase: "kpi-selection", metricName } });
+  const analysis = await recalculateFromStoredRows(importId, selectedProfiles);
+  return { analysis, profiles: selectedProfiles };
+}
+
 export async function processNextQueuedImport() {
   const job = await claimNextQueuedImport();
   if (!job) return null;
@@ -975,6 +1023,7 @@ export const __kpiImportWorkerTesting = {
   inferProfiles,
   findMetric,
   findDate,
+  applyMetricSelection,
   parseDate,
   parseExcelSerialDate,
   parseUnixTimestamp,

@@ -77,6 +77,7 @@ const changeText = (value: number) => `${value > 0 ? "+" : ""}${value.toFixed(1)
 const displayPeriod = (value: unknown) => typeof value === "string" && /^\d{4}-\d{2}$/.test(value) ? readablePeriod(value) : "";
 const humanizePeriodText = (value: string) => value.replace(/\b\d{4}-(?:0[1-9]|1[0-2])\b/g, period => longReadablePeriod(period));
 
+type RemoteProfile = { name: string; kind: string; confidence?: number; isSelectedMetric?: boolean; isMetricCandidate?: boolean; candidateReason?: string; label?: string; selectionReason?: string };
 type RemoteImport = {
   id: string;
   originalFileName: string;
@@ -90,7 +91,7 @@ type RemoteImport = {
 };
 
 const remoteLogs = (value: unknown) => Array.isArray(value) ? value as Array<{ key: string; title: string; detail: string; count: number; severity: "success" | "warning" | "info" }> : [];
-const remoteProfiles = (value: unknown) => Array.isArray(value) ? value as Array<{ name: string; kind: string }> : [];
+const remoteProfiles = (value: unknown) => Array.isArray(value) ? value as RemoteProfile[] : [];
 
 function Logo() {
   return <div className="kpi-logo" aria-label="KPI Detective"><span className="kpi-logo-mark"><span /><span /><span /></span><span>KPI <b>Detective</b></span></div>;
@@ -172,7 +173,7 @@ function DataTable({ dataset, onToggleExclusion, onUndoChange, onConfirmDuplicat
     <div className="data-table-scroll"><table><thead><tr><th>Row</th>{columns.map(column => <th key={column.name}>{column.name}<small>{column.kind}</small></th>)}<th>Review</th></tr></thead><tbody>{rows.map(row => <tr key={row.id} className={row.excluded ? "is-excluded" : row.possibleDuplicate ? "is-flagged" : ""}><td><b>{row.rowNumber}</b>{row.excluded && <span className="row-status">Excluded</span>}</td>{columns.map(column => { const changed = row.changes.some(change => change.column === column.name); const value = row.values[column.name]; return <td key={column.name} className={changed ? "cell-changed" : ""}>{value === null ? <em>Missing</em> : String(value)}</td>; })}<td><div className="table-actions">{row.changes.length > 0 && <button onClick={() => onUndoChange(row)}>Undo fix</button>}{row.possibleDuplicate && <button onClick={() => onConfirmDuplicate(row)}>Keep row</button>}<button onClick={() => onToggleExclusion(row)}>{row.excluded ? "Restore" : "Exclude"}</button></div></td></tr>)}</tbody></table></div><p className="table-note">Highlighted cells were standardised. Excluded rows are greyed out and do not influence the investigation. Your adjustments take effect before the KPI is recalculated.</p></div>;
 }
 
-function RemoteDataTable({ importId, profiles, onChanged }: { importId: string; profiles: Array<{ name: string; kind: string }>; onChanged: () => void }) {
+function RemoteDataTable({ importId, profiles, onChanged }: { importId: string; profiles: RemoteProfile[]; onChanged: () => void }) {
   const [page, setPage] = useState(0);
   const [reviewError, setReviewError] = useState("");
   const preview = trpc.kpiImports.preview.useQuery({ importId, page, pageSize: 100 });
@@ -261,6 +262,7 @@ export default function KPIDetective() {
   const [dark, setDark] = useState(false);
   const [showData, setShowData] = useState(false);
   const [onboarding, setOnboarding] = useState(() => typeof window !== "undefined" && sessionStorage.getItem("kpi-detective-tour-dismissed") !== "true");
+  const [requestedMetric, setRequestedMetric] = useState("");
   const [history, setHistory] = useState<HistoryEntry[]>(() => {
     if (typeof window === "undefined") return [];
     try { return JSON.parse(localStorage.getItem("kpi-detective-history") ?? "[]") as HistoryEntry[]; } catch { return []; }
@@ -270,11 +272,15 @@ export default function KPIDetective() {
   const createUpload = trpc.kpiImports.createUpload.useMutation();
   const completeUpload = trpc.kpiImports.completeUpload.useMutation();
   const recalculateImport = trpc.kpiImports.recalculate.useMutation();
+  const selectRemoteMetric = trpc.kpiImports.selectMetric.useMutation();
   const remoteStatus = trpc.kpiImports.get.useQuery({ importId: remoteImportId ?? "00000000-0000-0000-0000-000000000000" }, { enabled: Boolean(remoteImportId), refetchInterval: query => {
     const status = (query.state.data as RemoteImport | undefined)?.status;
     return status === "complete" || status === "failed" || status === "cancelled" ? false : 2500;
   } });
   const remoteImport = remoteStatus.data as RemoteImport | undefined;
+  const remoteMetricCandidates = (remoteImport ? remoteProfiles(remoteImport.columnsJson) : []).filter(profile => profile.kind === "number" && profile.isMetricCandidate);
+  const recommendedMetric = remoteMetricCandidates.find(profile => profile.isSelectedMetric) ?? remoteMetricCandidates[0];
+  const activeRequestedMetric = requestedMetric || recommendedMetric?.name || "";
   const recalculateRemoteImport = async () => {
     if (!remoteImportId || recalculateImport.isPending) return;
     try {
@@ -294,6 +300,8 @@ export default function KPIDetective() {
   useEffect(() => {
     if (!remoteImport) return;
     setFileName(remoteImport.originalFileName);
+    const selectedMetric = remoteProfiles(remoteImport.columnsJson).find(profile => profile.kind === "number" && profile.isMetricCandidate && profile.isSelectedMetric);
+    if (selectedMetric) setRequestedMetric(selectedMetric.name);
     if (remoteImport.status === "complete" && remoteImport.analysisJson) {
       setAnalysis(remoteImport.analysisJson as KpiAnalysis);
       setDataset(null);
@@ -304,6 +312,17 @@ export default function KPIDetective() {
       setStage("upload");
     }
   }, [remoteImport]);
+
+  const chooseRemoteMetric = async () => {
+    if (!remoteImportId || !activeRequestedMetric || activeRequestedMetric === recommendedMetric?.name || selectRemoteMetric.isPending) return;
+    try {
+      setError("");
+      const result = await selectRemoteMetric.mutateAsync({ importId: remoteImportId, metricName: activeRequestedMetric });
+      setAnalysis(result.analysis as KpiAnalysis);
+      setRequestedMetric(activeRequestedMetric);
+      await remoteStatus.refetch();
+    } catch (reason) { setError(reason instanceof Error ? reason.message : "We could not update the KPI selection."); }
+  };
 
   const startCleaning = (rows: Record<string, unknown>[], name: string) => {
     setError("");
@@ -449,6 +468,6 @@ export default function KPIDetective() {
     {onboarding && stage === "upload" && <aside className="tour-card"><button onClick={closeTour} aria-label="Close onboarding"><X size={15}/></button><span className="eyebrow">New here?</span><strong>Three steps to clarity</strong><p>Upload a file, quickly review the cleaning work, and get a plain-English explanation of the change.</p><div><span>1 Upload</span><span>2 Review</span><span>3 Investigate</span></div></aside>}
     {stage === "upload" && <section className="upload-screen"><div className="upload-intro"><span className="eyebrow">An analyst for every spreadsheet</span><h1>Find out <em>why</em><br/>your number moved.</h1><p>KPI Detective cleans your business data, identifies the one change that matters, and explains the drivers in clear, practical language.</p><div className="trust-row"><span><LockKeyhole size={16}/>Your data stays private</span><span><Gauge size={16}/>Confidence on every finding</span></div></div><div className="upload-card"><div className="upload-card-head"><div><span className="upload-icon"><FileSpreadsheet size={22}/></span><h2>Start an investigation</h2></div><span>CSV or Excel</span></div><button className="dropzone" onClick={() => isAuthenticated ? fileInput.current?.click() : startLogin()} onDragOver={event => event.preventDefault()} onDrop={onDrop}><UploadCloud size={28}/><strong>Drop your file here</strong><span>or choose a CSV / .xlsx from your computer</span><i>Up to {MAX_UPLOAD_LABEL} / {MAX_UPLOAD_ROWS_LABEL} · processed securely in the backend</i></button><input ref={fileInput} type="file" accept=".csv,.xlsx" onChange={onInput} hidden/>{!authLoading && !isAuthenticated && <button className="signin-upload" onClick={() => startLogin()}>Sign in to upload private data</button>}<div className="upload-divider"><span>or explore the product</span></div><button className="demo-button" onClick={() => startCleaning(createDemoRows(), "KPI Detective sample retail data")}>Try the sample retail dataset <ArrowRight size={16}/></button>{error && <div className="upload-error"><AlertTriangle size={17}/><span>{error}</span><button onClick={() => setError("")}><X size={15}/></button></div>}<p className="privacy-note"><LockKeyhole size={13}/>Files up to {MAX_UPLOAD_LABEL} and {MAX_UPLOAD_ROWS_LABEL} upload directly to private storage and are processed securely on the backend. The browser receives only status updates, a small preview page, and aggregated findings.</p></div></section>}
     {stage === "cleaning" && <section className="progress-screen"><div className="processing-orbit"><div/><Sparkles size={30}/></div><span className="eyebrow">{stageDetails.cleaning.step} · Backend import</span><h1>Checking the evidence.</h1><p>Your file is being processed securely on the backend. This no-worker version supports up to {MAX_UPLOAD_LABEL} and {MAX_UPLOAD_ROWS_LABEL} per import.</p><div className="processing-steps"><span><Check size={15}/>Stored {fileName}</span><span><i className="loading-pulse" aria-hidden="true"/>{remoteImport ? `${remoteImport.status} · ${remoteImport.sourceRowCount.toLocaleString()} rows processed` : "Starting secure analysis"}</span><span>{remoteImport?.status === "analyzing" ? "Calculating KPI drivers" : "Preparing database aggregates"}</span></div></section>}
-    {stage === "review" && (dataset || remoteImport) && <section className="review-screen"><div className="review-heading"><div><span className="eyebrow">{stageDetails.review.step} · {stageDetails.review.label}</span><h1>Your data is <em>ready to investigate.</em></h1><p>{remoteImport ? "The complete upload was cleaned and analysed in the backend. The optional review view fetches 100 rows at a time." : "We made only high-confidence standardisations, retained outliers, and kept a traceable log of every action."}</p></div><MetricPill label="Source rows" value={String(remoteImport?.sourceRowCount ?? dataset?.sourceRowCount ?? 0)} /></div>{dataset?.warnings.length ? <div className="warning-banner"><AlertTriangle size={17}/><div><strong>A few fields need attention</strong><p>{dataset.warnings.join(" ")}</p></div></div> : null}{remoteImport ? <RemoteCleaningLog logs={remoteLogs(remoteImport.cleaningSummaryJson)} /> : dataset ? <CleaningLog dataset={dataset} /> : null}<div className="review-actions"><button className="secondary-action" onClick={() => setShowData(current => !current)}><TableProperties size={17}/>{showData ? "Hide cleaned data" : "View cleaned data"}</button><button className="primary-action large" onClick={runInvestigation}>Investigate {remoteImport ? remoteProfiles(remoteImport.columnsJson).find(column => column.kind === "number")?.name ?? "my KPI" : dataset?.columns.filter(column => column.kind === "number")[0]?.name ?? "my KPI"}<ArrowRight size={17}/></button></div>{error && <div className="inline-error"><AlertTriangle size={17}/>{error}</div>}{showData && (remoteImportId && remoteImport ? <RemoteDataTable importId={remoteImportId} profiles={remoteProfiles(remoteImport.columnsJson)} onChanged={() => { void remoteStatus.refetch(); }} /> : dataset ? <DataTable dataset={dataset} onToggleExclusion={toggleExclusion} onUndoChange={undoChange} onConfirmDuplicate={confirmDuplicate}/> : null)}</section>}
+    {stage === "review" && (dataset || remoteImport) && <section className="review-screen"><div className="review-heading"><div><span className="eyebrow">{stageDetails.review.step} · {stageDetails.review.label}</span><h1>Your data is <em>ready to investigate.</em></h1><p>{remoteImport ? "The complete upload was cleaned and analysed in the backend. The optional review view fetches 100 rows at a time." : "We made only high-confidence standardisations, retained outliers, and kept a traceable log of every action."}</p></div><MetricPill label="Source rows" value={String(remoteImport?.sourceRowCount ?? dataset?.sourceRowCount ?? 0)} /></div>{dataset?.warnings.length ? <div className="warning-banner"><AlertTriangle size={17}/><div><strong>A few fields need attention</strong><p>{dataset.warnings.join(" ")}</p></div></div> : null}{remoteImport ? <RemoteCleaningLog logs={remoteLogs(remoteImport.cleaningSummaryJson)} /> : dataset ? <CleaningLog dataset={dataset} /> : null}{remoteImport && remoteMetricCandidates.length > 1 && <section className="kpi-candidate-panel" aria-labelledby="kpi-candidate-heading"><div className="kpi-candidate-heading"><div><span className="eyebrow">Choose the headline KPI</span><h2 id="kpi-candidate-heading">Which number should Peter investigate?</h2></div><span>{remoteMetricCandidates.length} strong candidates</span></div><p>The recommendation is based on the column headers and valid numeric values. You can switch to another candidate—such as Profit instead of Revenue—without changing the cleaning, outlier checks, confidence method, or driver calculations.</p><div className="kpi-candidate-list" role="radiogroup" aria-label="KPI candidates">{remoteMetricCandidates.map(candidate => { const selected = activeRequestedMetric === candidate.name; const recommended = candidate.name === recommendedMetric?.name; return <label className={`kpi-candidate-option ${selected ? "is-selected" : ""}`} key={candidate.name}><input type="radio" name="kpi-candidate" value={candidate.name} checked={selected} onChange={() => setRequestedMetric(candidate.name)} /><span className="candidate-radio" aria-hidden="true"/><span className="candidate-copy"><strong>{candidate.label ?? candidate.name}</strong><small>{candidate.candidateReason ?? `Usable numeric field (${candidate.confidence ?? 0}% valid values).`}</small></span>{recommended && <b>Recommended</b>}</label>; })}</div>{activeRequestedMetric !== recommendedMetric?.name && <div className="kpi-selection-action"><span>Switching the KPI recalculates the existing cleaned import; it does not clean the file again.</span><button className="secondary-action" onClick={() => void chooseRemoteMetric()} disabled={selectRemoteMetric.isPending}>{selectRemoteMetric.isPending ? <Loader2 className="spin" size={16}/> : <Check size={16}/>} {selectRemoteMetric.isPending ? "Updating KPI…" : `Use ${remoteMetricCandidates.find(candidate => candidate.name === activeRequestedMetric)?.label ?? activeRequestedMetric}`}</button></div>}</section>}<div className="review-actions"><button className="secondary-action" onClick={() => setShowData(current => !current)}><TableProperties size={17}/>{showData ? "Hide cleaned data" : "View cleaned data"}</button><button className="primary-action large" onClick={runInvestigation}>Investigate {remoteImport ? recommendedMetric?.label ?? recommendedMetric?.name ?? "my KPI" : dataset?.columns.filter(column => column.kind === "number")[0]?.name ?? "my KPI"}<ArrowRight size={17}/></button></div>{error && <div className="inline-error"><AlertTriangle size={17}/>{error}</div>}{showData && (remoteImportId && remoteImport ? <RemoteDataTable importId={remoteImportId} profiles={remoteProfiles(remoteImport.columnsJson)} onChanged={() => { void remoteStatus.refetch(); }} /> : dataset ? <DataTable dataset={dataset} onToggleExclusion={toggleExclusion} onUndoChange={undoChange} onConfirmDuplicate={confirmDuplicate}/> : null)}</section>}
   </main>;
 }

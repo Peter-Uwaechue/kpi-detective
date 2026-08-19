@@ -3,7 +3,7 @@ import { z } from "zod";
 import { createCandidateReferral } from "./db";
 import { createKpiImport, getAllImportRows, getImportAggregates, getKpiImport, getPreviewPage, resetKpiImportData, updateKpiImport } from "./kpiImportDb";
 import { createImportUploadUrl, getImportObjectInfo } from "./kpiImportStorage";
-import { applyImportReviewAction, processKpiImport, recalculateKpiImport } from "./kpiImportWorker";
+import { applyImportReviewAction, processKpiImport, recalculateKpiImport, selectKpiImportMetric } from "./kpiImportWorker";
 import { invokeLLM } from "./_core/llm";
 import { fallbackAnalystAnswer, type AnalystContext } from "./kpiAnalyst";
 import { answerPeterQuery, isAnswerablePeterSuggestion, peterSuggestionSignature, planPeterQuestion, resolvePeterPlanWithAi } from "./kpiAnalystQuery";
@@ -143,6 +143,19 @@ export const appRouter = router({
         return { importId: input.importId, status: "complete" as const, analysis };
       } catch (error) {
         const errorMessage = error instanceof Error ? error.message.slice(0, 4000) : "The import could not be recalculated.";
+        await updateKpiImport(input.importId, { status: "failed", errorMessage, completedAt: new Date() });
+        throw new Error(errorMessage);
+      }
+    }),
+    selectMetric: protectedProcedure.input(z.object({ importId: z.string().uuid(), metricName: z.string().trim().min(1).max(255) })).mutation(async ({ input, ctx }) => {
+      const job = await getKpiImport(input.importId, ctx.user.openId);
+      if (!job) throw new Error("Import job was not found.");
+      if (job.status !== "complete") throw new Error("This import is not ready for KPI selection.");
+      try {
+        const result = await selectKpiImportMetric(input.importId, input.metricName);
+        return { importId: input.importId, status: "complete" as const, ...result };
+      } catch (error) {
+        const errorMessage = error instanceof Error ? error.message.slice(0, 4000) : "The selected KPI could not be analysed.";
         await updateKpiImport(input.importId, { status: "failed", errorMessage, completedAt: new Date() });
         throw new Error(errorMessage);
       }

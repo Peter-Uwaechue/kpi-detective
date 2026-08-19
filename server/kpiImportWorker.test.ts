@@ -455,3 +455,26 @@ it("reads native XLSX dates, serial dates, formula results, and numeric cells th
   expect(byName.get("Order ID")).toMatchObject({ kind: "identifier" });
   expect(cleaned[0]?.cleanedValues).toMatchObject({ "Selling Date": "2026-01-01", "Excel Serial Date": "2022-01-01", "Revenue USD": 1000 });
 });
+
+
+it("keeps multiple strong KPI candidates visible and permits a manual metric selection", () => {
+  const rows: RawRecord[] = Array.from({ length: 12 }, (_, index) => ({
+    order_date: `2026-01-${String(index + 1).padStart(2, "0")}`,
+    Revenue: String(1200 + index * 35),
+    Profit: String(310 + index * 9),
+    Losses: String(45 + index),
+    "Units Sold": String(18 + index),
+    order_id: `ORD-${1000 + index}`,
+  }));
+  const profiles = __kpiImportWorkerTesting.inferProfiles(Object.keys(rows[0]!), rows);
+  const candidates = profiles.filter(profile => profile.isMetricCandidate).map(profile => profile.name);
+
+  expect(candidates).toEqual(expect.arrayContaining(["Revenue", "Profit", "Losses", "Units Sold"]));
+  expect(__kpiImportWorkerTesting.findMetric(profiles)).toMatchObject({ name: "Revenue", isSelectedMetric: true });
+
+  const profitSelection = __kpiImportWorkerTesting.applyMetricSelection(profiles, "Profit");
+  expect(__kpiImportWorkerTesting.findMetric(profitSelection)).toMatchObject({ name: "Profit", isSelectedMetric: true });
+  expect(profitSelection.find(profile => profile.name === "Revenue")).toMatchObject({ isMetricCandidate: true, isSelectedMetric: false });
+  expect(profitSelection.find(profile => profile.name === "order_date")).toMatchObject({ kind: "date" });
+  expect(profitSelection.find(profile => profile.name === "order_id")).toMatchObject({ kind: "identifier" });
+});
