@@ -58,6 +58,7 @@ type ColumnProfile = {
   confidence: number;
   datePreference?: DatePreference;
   dateContext?: DateContext;
+  acceptsExcelSerialDates?: boolean;
   isSelectedMetric?: boolean;
   label?: string;
   selectionReason?: string;
@@ -125,12 +126,25 @@ const toIso = (year: number, month: number, day: number) => {
   return candidate.getUTCFullYear() === year && candidate.getUTCMonth() === month - 1 && candidate.getUTCDate() === day ? candidate.toISOString().slice(0, 10) : null;
 };
 
+const EXCEL_SERIAL_MIN = 1;
+const EXCEL_SERIAL_MAX = 2_958_465; // Excel's 9999-12-31 serial ceiling.
+
+const parseExcelSerialDate = (value: unknown) => {
+  const serial = parseNumber(value);
+  if (serial === null || serial < EXCEL_SERIAL_MIN || serial > EXCEL_SERIAL_MAX) return null;
+  // Excel includes a fictitious 1900-02-29 at serial 60. Subtract it from
+  // later serials so modern workbook dates map to their actual calendar day.
+  const wholeDays = Math.floor(serial);
+  const adjustedDays = wholeDays >= 60 ? wholeDays - 1 : wholeDays;
+  return new Date(Date.UTC(1899, 11, 31) + adjustedDays * 86_400_000).toISOString().slice(0, 10);
+};
+
 const withinObservedPeriodWindow = (value: string, context?: DateContext) => {
   const period = value.slice(0, 7);
   return (!context?.startPeriod || period >= context.startPeriod) && (!context?.endPeriod || period <= context.endPeriod);
 };
 
-const parseDate = (value: unknown, preference: DatePreference = "ambiguous", context?: DateContext) => {
+const parseDate = (value: unknown, preference: DatePreference = "ambiguous", context?: DateContext, acceptsExcelSerialDates = false) => {
   if (value instanceof Date && !Number.isNaN(value.getTime())) return value.toISOString().slice(0, 10);
   const raw = text(value);
   if (!raw || missing(raw)) return null;
@@ -163,6 +177,7 @@ const parseDate = (value: unknown, preference: DatePreference = "ambiguous", con
     const parsed = Date.parse(raw);
     return Number.isNaN(parsed) ? null : new Date(parsed).toISOString().slice(0, 10);
   }
+  if (acceptsExcelSerialDates) return parseExcelSerialDate(value);
   // Do not pass arbitrary identifier-looking strings to Date.parse: engines can
   // interpret values such as ORD-10001 as a year, producing a false date rate.
   return null;
@@ -230,16 +245,17 @@ const inferBaseProfiles = (headers: string[], samples: RawRecord[]): ColumnProfi
   if (!values.length) return { name, kind: "unknown", confidence: 0 };
   const dateProfile = inferDateProfile(values);
   const numericRate = values.filter(value => parseNumber(value) !== null).length / values.length;
-  const dateRate = values.filter(value => parseDate(value, dateProfile.preference, dateProfile.context) !== null).length / values.length;
-  const distinctRate = new Set(values.map(text)).size / values.length;
   const dateHint = headerScore(name, DATE_TERMS);
+  const acceptsExcelSerialDates = dateHint > 0 && values.some(value => parseExcelSerialDate(value) !== null);
+  const dateRate = values.filter(value => parseDate(value, dateProfile.preference, dateProfile.context, acceptsExcelSerialDates) !== null).length / values.length;
+  const distinctRate = new Set(values.map(text)).size / values.length;
   const numericHint = headerScore(name, REVENUE_TERMS);
   const explicitIdentifier = IDENTIFIER_PATTERN.test(name);
   const isReliableDate = dateRate >= PROFILE_MIN_VALID_RATE && (dateHint > 0 || numericRate < 0.98);
   // Values—not header uniqueness—decide whether a date-like column is a date.
   // Headers such as order_date and transaction_date must not be captured by
   // the identifier heuristic merely because every date/time is distinct.
-  if (isReliableDate) return { name, kind: "date", confidence: Math.round(Math.min(99, dateRate * 88 + dateHint * 5)), datePreference: dateProfile.preference, dateContext: dateProfile.context };
+  if (isReliableDate) return { name, kind: "date", confidence: Math.round(Math.min(99, dateRate * 88 + dateHint * 5)), datePreference: dateProfile.preference, dateContext: dateProfile.context, acceptsExcelSerialDates: acceptsExcelSerialDates || undefined };
   const quantityHint = headerScore(name, QUANTITY_TERMS);
   if (explicitIdentifier || (distinctRate > 0.92 && values.length > 7 && /\d/.test(values.map(text).join("")) && numericHint === 0 && quantityHint === 0)) return { name, kind: "identifier", confidence: 82 };
   const categoryHint = headerScore(name, CATEGORY_TERMS);
@@ -308,7 +324,7 @@ const findMetric = (profiles: ColumnProfile[]) => profiles.find(profile => profi
 const findDate = (profiles: ColumnProfile[]) => profiles.filter(profile => profile.kind === "date").sort((a, b) => headerScore(b.name, DATE_TERMS) - headerScore(a.name, DATE_TERMS) || b.confidence - a.confidence)[0];
 const profilingDetail = (profiles: ColumnProfile[]) => profiles.map(profile => {
   const selected = profile.isSelectedMetric ? "; selected KPI" : "";
-  const preference = profile.kind === "date" && profile.datePreference ? `; ${profile.datePreference}${profile.dateContext?.startPeriod && profile.dateContext?.endPeriod ? `; observed ${profile.dateContext.startPeriod} to ${profile.dateContext.endPeriod}` : ""}` : "";
+  const preference = profile.kind === "date" && profile.datePreference ? `; ${profile.datePreference}${profile.dateContext?.startPeriod && profile.dateContext?.endPeriod ? `; observed ${profile.dateContext.startPeriod} to ${profile.dateContext.endPeriod}` : ""}${profile.acceptsExcelSerialDates ? "; Excel serials supported" : ""}` : "";
   const displayName = profile.label && profile.label !== profile.name ? `${profile.label} (${profile.name})` : profile.name;
   return `${displayName}: ${profile.kind} (${profile.confidence}%${selected}${preference})`;
 }).join(" · ");
@@ -358,7 +374,7 @@ function cleanRow(row: RawRecord, profiles: ColumnProfile[], stats: WorkerStats)
       continue;
     }
     if (profile.kind === "date") {
-      const parsed = parseDate(raw, profile.datePreference, profile.dateContext);
+      const parsed = parseDate(raw, profile.datePreference, profile.dateContext, profile.acceptsExcelSerialDates);
       cleanedValues[profile.name] = parsed ?? raw;
       if (parsed && parsed !== raw) { stats.dateChanges++; changes.push({ column: profile.name, from: raw, to: parsed, reason: "Standardised date" }); }
       if (!parsed) issues.push({ type: "ambiguous-date", column: profile.name, message: "Could not standardise date" });
@@ -807,7 +823,7 @@ export async function applyImportReviewAction(input: { importId: string; rowNumb
       row.changes.splice(index, 1);
     } else {
       const rawValue = input.value ?? "";
-      const value = profile.kind === "number" ? parseNumber(rawValue) : profile.kind === "date" ? parseDate(rawValue, profile.datePreference, profile.dateContext) : profile.kind === "category" ? (text(rawValue).replace(/\s+/g, " ").trim() || UNKNOWN) : rawValue;
+      const value = profile.kind === "number" ? parseNumber(rawValue) : profile.kind === "date" ? parseDate(rawValue, profile.datePreference, profile.dateContext, profile.acceptsExcelSerialDates) : profile.kind === "category" ? (text(rawValue).replace(/\s+/g, " ").trim() || UNKNOWN) : rawValue;
       if (profile.kind === "number" && value === null && !missing(rawValue)) throw new Error("Enter a valid numeric value for this column.");
       if (profile.kind === "date" && value === null && !missing(rawValue)) throw new Error("Enter a valid date value for this column.");
       const previous = row.cleanedValues[input.column];
@@ -853,6 +869,7 @@ export const __kpiImportWorkerTesting = {
   findMetric,
   findDate,
   parseDate,
+  parseExcelSerialDate,
   cleanRow,
   applyFuzzyCategoryReview,
   applyPossibleDuplicateReview,

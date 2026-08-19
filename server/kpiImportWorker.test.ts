@@ -334,3 +334,39 @@ it("does not misread identifier strings with year-like digits as dates", () => {
   expect(profileByName.get("created_at")).toMatchObject({ kind: "date" });
   expect(profileByName.get("amount")).toMatchObject({ kind: "number", isSelectedMetric: true });
 });
+
+
+it("classifies Selling Date text and Excel serial dates without confusing IDs or revenue", () => {
+  const rows: RawRecord[] = Array.from({ length: 12 }, (_, index) => ({
+    "Selling Date": index % 2 === 0 ? `1/${index + 1}/2022` : `10/${index + 1}/2026`,
+    "Excel Selling Date": String(44562 + index),
+    order_id: `ORD-${10001 + index}`,
+    transaction_code: `TXN-${20260101 + index}`,
+    revenue_usd: String(150.25 + index * 19.5),
+  }));
+  const profiles = __kpiImportWorkerTesting.inferProfiles(Object.keys(rows[0]!), rows);
+  const profileByName = new Map(profiles.map(profile => [profile.name, profile]));
+  const cleaned = rows.map(row => __kpiImportWorkerTesting.cleanRow(row, profiles, stats()));
+
+  expect(profileByName.get("Selling Date")).toMatchObject({ kind: "date" });
+  expect(profileByName.get("Excel Selling Date")).toMatchObject({ kind: "date", acceptsExcelSerialDates: true });
+  expect(profileByName.get("order_id")).toMatchObject({ kind: "identifier" });
+  expect(profileByName.get("transaction_code")).toMatchObject({ kind: "identifier" });
+  expect(profileByName.get("revenue_usd")).toMatchObject({ kind: "number", isSelectedMetric: true });
+  expect(cleaned.slice(0, 3).map(row => row.cleanedValues["Excel Selling Date"])).toEqual(["2022-01-01", "2022-01-02", "2022-01-03"]);
+});
+
+it("does not treat serial-sized numbers as dates without a date-labelled column", () => {
+  const rows: RawRecord[] = Array.from({ length: 12 }, (_, index) => ({
+    order_id: String(44562 + index),
+    inventory_value: String(44562 + index),
+    revenue_usd: String(120 + index),
+  }));
+  const profiles = __kpiImportWorkerTesting.inferProfiles(Object.keys(rows[0]!), rows);
+  const profileByName = new Map(profiles.map(profile => [profile.name, profile]));
+
+  expect(profileByName.get("order_id")).toMatchObject({ kind: "identifier" });
+  expect(profileByName.get("inventory_value")).toMatchObject({ kind: "number" });
+  expect(profileByName.get("revenue_usd")).toMatchObject({ kind: "number" });
+  expect(__kpiImportWorkerTesting.findMetric(profiles)?.kind).toBe("number");
+});
