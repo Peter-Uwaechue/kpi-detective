@@ -751,6 +751,29 @@ const preferredCategoryDisplay = (values: string[], frequency: Map<string, numbe
 const possibleAliasProposalId = (column: string, abbreviation: string, expansion: string) => `${normalise(column)}:${compactCategory(abbreviation)}:${compactCategory(expansion)}`;
 const isAbbreviationToken = (value: string) => /^(?:[A-Z]{2,5}|(?:[A-Z]\.){2,5})$/.test(text(value));
 const initialsFor = (value: string) => categoryMatchKey(value).split(" ").filter(Boolean).map(part => part[0]).join("").toUpperCase();
+const deprecatedAutomaticAbbreviationChange = (change: CellChange) => change.reason === "Mapped a controlled category alias" && isAbbreviationToken(String(change.from));
+
+function revertDeprecatedAutomaticAbbreviationChanges(rows: ReviewRow[]) {
+  const changedRows: ReviewRow[] = [];
+  rows.forEach(row => {
+    const deprecated = row.changes.filter(deprecatedAutomaticAbbreviationChange);
+    if (!deprecated.length) return;
+    let changed = false;
+    deprecated.forEach(change => {
+      // Never overwrite a subsequent user edit; only reverse the old automatic alias when its result is still present.
+      if (row.cleanedValues[change.column] === change.to) {
+        row.cleanedValues[change.column] = change.from;
+        changed = true;
+      }
+    });
+    if (!changed) return;
+    row.changes = row.changes.filter(change => !deprecatedAutomaticAbbreviationChange(change));
+    row.rowSignature = signatureFor(row.cleanedValues);
+    changedRows.push(row);
+  });
+  return changedRows;
+}
+
 const dismissedPossibleAliasIds = (rows: ReviewRow[]) => new Set(rows.flatMap(row => row.issues)
   .filter(issue => issue.type === "possible-alias" && issue.message.startsWith("Dismissed possible alias: "))
   .map(issue => issue.message.slice("Dismissed possible alias: ".length)));
@@ -940,6 +963,8 @@ async function recalculateFromStoredRows(importId: string, profiles: ColumnProfi
   const job = await getKpiImport(importId);
   if (!job) throw new Error("Import job was not found.");
   const rows = toReviewRows(await getAllImportRows(importId));
+  const revertedAutomaticAbbreviations = revertDeprecatedAutomaticAbbreviationChanges(rows);
+  if (revertedAutomaticAbbreviations.length) await persistReviewRows(importId, revertedAutomaticAbbreviations);
   const metric = findMetric(profiles);
   const date = findDate(profiles);
   if (!metric || !date) throw new Error("The import no longer has a reliable numeric KPI and date column.");
@@ -1147,6 +1172,19 @@ export async function reviewPossibleAlias(input: { importId: string; proposalId:
   return { analysis };
 }
 
+export async function repairDeprecatedAutomaticAbbreviationMerges(importId: string) {
+  const job = await getKpiImport(importId);
+  if (!job) throw new Error("Import job was not found.");
+  const profiles = asArray<ColumnProfile>(job.columnsJson);
+  if (!profiles.length) return false;
+  const rows = toReviewRows(await getAllImportRows(importId));
+  const reverted = revertDeprecatedAutomaticAbbreviationChanges(rows);
+  if (!reverted.length) return false;
+  await persistReviewRows(importId, reverted);
+  await recalculateFromStoredRows(importId, profiles);
+  return true;
+}
+
 export async function recalculateKpiImport(importId: string) {
   const job = await getKpiImport(importId);
   if (!job) throw new Error("Import job was not found.");
@@ -1213,7 +1251,9 @@ export const __kpiImportWorkerTesting = {
   cleanRow,
   applyFuzzyCategoryReview,
   findPossibleAliasProposals,
+  revertDeprecatedAutomaticAbbreviationChanges,
   applyPossibleAliasReviewDecision,
+  repairDeprecatedAutomaticAbbreviationMerges,
   applyPossibleDuplicateReview,
   logsFromStats,
   profilingDetail,

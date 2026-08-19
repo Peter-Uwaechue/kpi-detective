@@ -602,6 +602,17 @@ describe("KPI import category alias-resolution matrix", () => {
     expect(dismissedRows[30]?.issues[0]).toMatchObject({ type: "possible-alias", message: `Dismissed possible alias: ${dismissedProposal.id}` });
   });
 
+  it("reverses a legacy automatic abbreviation mapping from its stored audit trail", () => {
+    const legacyRow = row(1, "Port Harcourt");
+    legacyRow.changes.push({ column: "Location", from: "PH", to: "Port Harcourt", reason: "Mapped a controlled category alias" });
+
+    const reverted = __kpiImportWorkerTesting.revertDeprecatedAutomaticAbbreviationChanges([legacyRow]);
+
+    expect(reverted).toEqual([legacyRow]);
+    expect(legacyRow.cleanedValues.Location).toBe("PH");
+    expect(legacyRow.changes).toEqual([]);
+  });
+
   it("never auto-expands other acronym-style location values such as NY", () => {
     const rows = [
       ...Array.from({ length: 30 }, (_, index) => row(index + 1, "Lagos")),

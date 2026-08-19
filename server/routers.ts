@@ -3,7 +3,7 @@ import { z } from "zod";
 import { createCandidateReferral } from "./db";
 import { createKpiImport, getAllImportRows, getImportAggregates, getKpiImport, getPreviewPage, resetKpiImportData, updateKpiImport } from "./kpiImportDb";
 import { createImportUploadUrl, getImportObjectInfo } from "./kpiImportStorage";
-import { applyImportReviewAction, processKpiImport, recalculateKpiImport, reviewPossibleAlias, selectKpiImportMetric, setKpiImportCurrency } from "./kpiImportWorker";
+import { applyImportReviewAction, processKpiImport, recalculateKpiImport, repairDeprecatedAutomaticAbbreviationMerges, reviewPossibleAlias, selectKpiImportMetric, setKpiImportCurrency } from "./kpiImportWorker";
 import { invokeLLM } from "./_core/llm";
 import { fallbackAnalystAnswer, type AnalystContext } from "./kpiAnalyst";
 import { answerPeterQuery, isAnswerablePeterSuggestion, peterSuggestionSignature, planPeterQuestion, resolvePeterPlanWithAi } from "./kpiAnalystQuery";
@@ -114,7 +114,8 @@ export const appRouter = router({
     get: protectedProcedure.input(z.object({ importId: z.string().uuid() })).query(async ({ input, ctx }) => {
       const job = await getKpiImport(input.importId, ctx.user.openId);
       if (!job) throw new Error("Import job was not found.");
-      return job;
+      if (job.status === "complete") await repairDeprecatedAutomaticAbbreviationMerges(input.importId);
+      return (await getKpiImport(input.importId, ctx.user.openId)) ?? job;
     }),
     preview: protectedProcedure.input(z.object({ importId: z.string().uuid(), page: z.number().int().min(0).default(0), pageSize: z.number().int().min(1).max(200).default(100) })).query(async ({ input, ctx }) => {
       const job = await getKpiImport(input.importId, ctx.user.openId);
