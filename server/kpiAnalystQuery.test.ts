@@ -356,3 +356,92 @@ describe("Ask Peter full-cleaned-data query service", () => {
     expect(result.answer).toContain("I’m not fully sure what you’re asking — could you rephrase?");
   });
 });
+
+
+const offsettingAnalysis: KpiAnalysis = {
+  ...analysis,
+  offsettingCauses: [
+    { id: "country-india", dimension: "Country", value: "India", impact: 100, previousValue: 200, currentValue: 300, confidence: 82, shareOfChange: 0.17, counterfactual: 1300, trend: [] },
+  ],
+};
+
+const askWithOffsettingAnalysis = (question: string) => {
+  const aggregateRows = aggregates(rows);
+  let plan = planPeterQuestion(question, offsettingAnalysis, profiles, aggregateRows);
+  const rowEvidence = plan.needsRows ? rows : undefined;
+  if (rowEvidence) plan = planPeterQuestion(question, offsettingAnalysis, profiles, aggregateRows, rowEvidence);
+  return answerPeterQuery({ question, analysis: offsettingAnalysis, profiles, aggregates: aggregateRows, rows: rowEvidence, plan });
+};
+
+describe("Ask Peter positive offsetting-factor support", () => {
+  it("explains a named positive offset with the same entity binding as a negative driver", () => {
+    const result = askWithOffsettingAnalysis("Why did India increase?");
+
+    expect(result.plan.intent).toBe("explain");
+    expect(result.plan.entity).toBe("India");
+    expect(result.answer).toContain("Country: India moved from 200 in February 2023 to 300 in March 2023, a +100 change");
+    expect(result.evidence.items[0]).toMatchObject({ dimension: "Country", value: "India", impact: 100 });
+  });
+
+  it("uses the displayed positive-offset card counterfactual exactly", () => {
+    const result = askWithOffsettingAnalysis("What if India hadn't grown?");
+
+    expect(result.plan.intent).toBe("counterfactual");
+    expect(result.answer).toContain("If Country: India had stayed at its February 2023 level");
+    expect(result.answer).toContain("about 1,300 in March 2023");
+    expect(result.answer).toContain("lower than the observed current-period total");
+    expect(result.evidence.items[0]).toMatchObject({ dimension: "Country", value: "India", impact: 100 });
+  });
+
+  it("ranks only positive factors that offset a decline when explicitly asked", () => {
+    const result = askWithOffsettingAnalysis("Which positive factors offset the decline?");
+
+    expect(result.plan.intent).toBe("factor_rank");
+    expect(result.plan.driverGroup).toBe("offsetting");
+    expect(result.answer).toContain("positive factors offsetting the decline");
+    expect(result.answer).toContain("Country: India (+100)");
+    expect(result.evidence.items.every(item => item.impact > 0)).toBe(true);
+  });
+
+  it("calculates overlap evidence within a named positive offset", () => {
+    const result = askWithOffsettingAnalysis("Which factors overlap with India?");
+
+    expect(result.plan.intent).toBe("overlap");
+    expect(result.plan.entity).toBe("India");
+    expect(result.answer).toContain("Within Country: India, the largest overlapping factors were");
+    expect(result.evidence.source).toBe("cleaned_rows");
+    expect(result.evidence.items.length).toBeGreaterThan(0);
+  });
+
+  it("distinguishes what is working from what needs fixing", () => {
+    const strengths = askWithOffsettingAnalysis("What is working well that I should invest more in?");
+    const priorities = askWithOffsettingAnalysis("What should I fix?");
+
+    expect(strengths.plan.intent).toBe("recommend");
+    expect(strengths.plan.driverGroup).toBe("offsetting");
+    expect(strengths.answer).toContain("strongest offsetting factors");
+    expect(strengths.evidence.items.every(item => item.impact > 0)).toBe(true);
+    expect(priorities.plan.intent).toBe("recommend");
+    expect(priorities.plan.driverGroup).toBe("primary");
+    expect(priorities.evidence.items.every(item => item.impact < 0)).toBe(true);
+  });
+});
+
+
+it("binds a numeric offsetting entity when its explicit dimension is named", () => {
+  const ageProfiles: ColumnProfile[] = [...profiles, { name: "CustomerAge", kind: "category", confidence: 100, nonEmptyCount: 8, validCount: 8 }];
+  const ageAnalysis: KpiAnalysis = {
+    ...analysis,
+    offsettingCauses: [
+      { id: "customer-age-38", dimension: "CustomerAge", value: "38", impact: 100, previousValue: 200, currentValue: 300, confidence: 82, shareOfChange: 0.17, counterfactual: 1300, trend: [] },
+    ],
+  };
+  const aggregateRows = aggregates(rows);
+  const plan = planPeterQuestion("Why did CustomerAge 38 increase?", ageAnalysis, ageProfiles, aggregateRows, rows);
+  const result = answerPeterQuery({ question: "Why did CustomerAge 38 increase?", analysis: ageAnalysis, profiles: ageProfiles, aggregates: aggregateRows, rows, plan });
+
+  expect(plan.intent).toBe("explain");
+  expect(plan.dimension).toBe("CustomerAge");
+  expect(plan.entity).toBe("38");
+  expect(result.answer).toContain("CustomerAge: 38 moved from 200 in February 2023 to 300 in March 2023, a +100 change");
+});

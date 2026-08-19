@@ -248,12 +248,15 @@ export const appRouter = router({
       const profiles = Array.isArray(job.columnsJson) ? job.columnsJson as ColumnProfile[] : [];
       const primaryDriver = analysis.causes[0]?.value;
       if (!primaryDriver) return [];
+      const offsettingDriver = analysis.offsettingCauses?.[0]?.value;
+      const offsettingGroupQuestion = analysis.change < 0 ? "Which positive factors offset the decline?" : "Which negative factors offset the growth?";
       const candidates = [
         `Why did ${primaryDriver} change?`,
         `Which companies changed most within ${primaryDriver}?`,
         `What if ${primaryDriver} had stayed flat?`,
         `Which factors overlap with ${primaryDriver}?`,
         `Which dates moved most within ${primaryDriver}?`,
+        ...(offsettingDriver ? [`Why did ${offsettingDriver} change?`, `What if ${offsettingDriver} had stayed flat?`, `Which factors overlap with ${offsettingDriver}?`, offsettingGroupQuestion, "What is working well that I should invest more in?"] : []),
         "What do I fix in the company?",
         "Which customer contributed the most?",
         "What should I investigate next?",
