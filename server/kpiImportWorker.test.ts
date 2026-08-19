@@ -557,13 +557,64 @@ describe("KPI import category alias-resolution matrix", () => {
     __kpiImportWorkerTesting.applyFuzzyCategoryReview(rows, categoryProfile, workerStats);
 
     expect(rows.slice(0, 4).map(item => item.cleanedValues.Location)).toEqual(["Abuja", "Abuja", "Abuja", "Abuja"]);
-    expect(rows.slice(4, 9).map(item => item.cleanedValues.Location)).toEqual(["Port Harcourt", "Port Harcourt", "Port Harcourt", "Port Harcourt", "Port Harcourt"]);
+    expect(rows.slice(4, 9).map(item => item.cleanedValues.Location)).toEqual(["Port Harcourt", "Port Harcourt", "Port Harcourt", "PH", "Port Harcourt"]);
     expect(rows.slice(9, 12).map(item => item.cleanedValues.Location)).toEqual(["Sao Paulo", "Sao Paulo", "Sao Paulo"]);
     expect(rows.slice(12, 14).map(item => item.cleanedValues.Location)).toEqual(["O'Connor", "O'Connor"]);
     expect(rows.slice(14).map(item => item.cleanedValues.Location)).toEqual(["Congo", "DR Congo", "Niger", "Nigeria"]);
     expect(rows[2]?.changes[0]?.reason).toBe("Standardised equivalent category formatting");
-    expect(rows[7]?.changes[0]?.reason).toBe("Mapped a controlled category alias");
+    expect(rows[7]?.changes).toEqual([]);
     expect(rows[8]?.changes[0]?.reason).toBe("Merged a high-confidence near-duplicate category");
+  });
+
+  it("flags a low-frequency abbreviation/full-name pair for review without applying a merge", () => {
+    const rows = [
+      ...Array.from({ length: 30 }, (_, index) => row(index + 1, "Lagos")),
+      row(31, "PH"), row(32, "PH"), row(33, "Port Harcourt"), row(34, "Port Harcourt"), row(35, "Abuja"), row(36, "Abuja"),
+    ];
+    const workerStats = stats();
+
+    __kpiImportWorkerTesting.applyFuzzyCategoryReview(rows, categoryProfile, workerStats);
+    const proposals = __kpiImportWorkerTesting.findPossibleAliasProposals(rows, categoryProfile);
+
+    expect(rows.slice(30, 34).map(item => item.cleanedValues.Location)).toEqual(["PH", "PH", "Port Harcourt", "Port Harcourt"]);
+    expect(workerStats.fuzzyCategoryRows).toBe(0);
+    expect(proposals).toEqual([expect.objectContaining({ column: "Location", abbreviation: "PH", expansion: "Port Harcourt", abbreviationCount: 2, expansionCount: 2, combinedCount: 4, dominantValue: "Lagos", dominantCount: 30 })]);
+  });
+
+  it("merges a possible alias only after approval and honours a keep-separate decision", () => {
+    const makeRows = () => [
+      ...Array.from({ length: 30 }, (_, index) => row(index + 1, "Lagos")),
+      row(31, "PH"), row(32, "PH"), row(33, "Port Harcourt"), row(34, "Port Harcourt"), row(35, "Abuja"), row(36, "Abuja"),
+    ];
+    const approvedRows = makeRows();
+    const approvedProposal = __kpiImportWorkerTesting.findPossibleAliasProposals(approvedRows, categoryProfile)[0]!;
+    __kpiImportWorkerTesting.applyPossibleAliasReviewDecision(approvedRows, approvedProposal, "merge");
+
+    expect(approvedRows.slice(30, 34).map(item => item.cleanedValues.Location)).toEqual(["Port Harcourt", "Port Harcourt", "Port Harcourt", "Port Harcourt"]);
+    expect(approvedRows[30]?.changes[0]).toMatchObject({ reason: "Merged after explicit possible-alias review", from: "PH", to: "Port Harcourt" });
+
+    const dismissedRows = makeRows();
+    const dismissedProposal = __kpiImportWorkerTesting.findPossibleAliasProposals(dismissedRows, categoryProfile)[0]!;
+    __kpiImportWorkerTesting.applyPossibleAliasReviewDecision(dismissedRows, dismissedProposal, "keep-separate");
+
+    expect(dismissedRows.slice(30, 34).map(item => item.cleanedValues.Location)).toEqual(["PH", "PH", "Port Harcourt", "Port Harcourt"]);
+    expect(__kpiImportWorkerTesting.findPossibleAliasProposals(dismissedRows, categoryProfile)).toEqual([]);
+    expect(dismissedRows[30]?.issues[0]).toMatchObject({ type: "possible-alias", message: `Dismissed possible alias: ${dismissedProposal.id}` });
+  });
+
+  it("never auto-expands other acronym-style location values such as NY", () => {
+    const rows = [
+      ...Array.from({ length: 30 }, (_, index) => row(index + 1, "Lagos")),
+      row(31, "NY"), row(32, "NY"), row(33, "New York"), row(34, "New York"), row(35, "Abuja"), row(36, "Abuja"),
+    ];
+    const workerStats = stats();
+
+    __kpiImportWorkerTesting.applyFuzzyCategoryReview(rows, categoryProfile, workerStats);
+    const proposals = __kpiImportWorkerTesting.findPossibleAliasProposals(rows, categoryProfile);
+
+    expect(rows.slice(30, 34).map(item => item.cleanedValues.Location)).toEqual(["NY", "NY", "New York", "New York"]);
+    expect(workerStats.fuzzyCategoryRows).toBe(0);
+    expect(proposals).toEqual([expect.objectContaining({ abbreviation: "NY", expansion: "New York" })]);
   });
 
   it("still reconciles exact formatting equivalence in a high-cardinality field without running broad fuzzy matching", () => {

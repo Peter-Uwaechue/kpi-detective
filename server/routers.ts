@@ -3,7 +3,7 @@ import { z } from "zod";
 import { createCandidateReferral } from "./db";
 import { createKpiImport, getAllImportRows, getImportAggregates, getKpiImport, getPreviewPage, resetKpiImportData, updateKpiImport } from "./kpiImportDb";
 import { createImportUploadUrl, getImportObjectInfo } from "./kpiImportStorage";
-import { applyImportReviewAction, processKpiImport, recalculateKpiImport, selectKpiImportMetric, setKpiImportCurrency } from "./kpiImportWorker";
+import { applyImportReviewAction, processKpiImport, recalculateKpiImport, reviewPossibleAlias, selectKpiImportMetric, setKpiImportCurrency } from "./kpiImportWorker";
 import { invokeLLM } from "./_core/llm";
 import { fallbackAnalystAnswer, type AnalystContext } from "./kpiAnalyst";
 import { answerPeterQuery, isAnswerablePeterSuggestion, peterSuggestionSignature, planPeterQuestion, resolvePeterPlanWithAi } from "./kpiAnalystQuery";
@@ -133,6 +133,16 @@ export const appRouter = router({
       if (!job) throw new Error("Import job was not found.");
       if (job.status !== "complete") throw new Error("Wait for the import to finish before reviewing cleaned data.");
       return applyImportReviewAction(input);
+    }),
+    reviewPossibleAlias: protectedProcedure.input(z.object({
+      importId: z.string().uuid(),
+      proposalId: z.string().trim().min(1).max(800),
+      decision: z.enum(["merge", "keep-separate"]),
+    })).mutation(async ({ input, ctx }) => {
+      const job = await getKpiImport(input.importId, ctx.user.openId);
+      if (!job) throw new Error("Import job was not found.");
+      if (job.status !== "complete") throw new Error("Wait for the import to finish before reviewing possible aliases.");
+      return reviewPossibleAlias(input);
     }),
     recalculate: protectedProcedure.input(z.object({ importId: z.string().uuid() })).mutation(async ({ input, ctx }) => {
       const job = await getKpiImport(input.importId, ctx.user.openId);

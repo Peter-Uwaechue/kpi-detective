@@ -78,7 +78,18 @@ type ColumnProfile = {
   metricRecipe?: MetricRecipe;
 };
 type CellChange = { column: string; from: unknown; to: unknown; reason: string };
-type DataIssue = { type: "possible-duplicate" | "outlier" | "invalid-number" | "ambiguous-date" | "missing" | "exact-duplicate"; column?: string; message: string };
+type DataIssue = { type: "possible-duplicate" | "possible-alias" | "outlier" | "invalid-number" | "ambiguous-date" | "missing" | "exact-duplicate"; column?: string; message: string };
+type PossibleAliasProposal = {
+  id: string;
+  column: string;
+  abbreviation: string;
+  expansion: string;
+  abbreviationCount: number;
+  expansionCount: number;
+  combinedCount: number;
+  dominantValue: string;
+  dominantCount: number;
+};
 type WorkerStats = {
   sourceRows: number;
   usableRows: number;
@@ -639,11 +650,12 @@ function fullCauseImpact(aggregates: AnalysisAggregate[], metricColumn: string, 
   return current - previous;
 }
 
-const logsFromStats = (stats: WorkerStats, metric?: ColumnProfile, currency?: CurrencyDetection) => [
+const logsFromStats = (stats: WorkerStats, metric?: ColumnProfile, currency?: CurrencyDetection, possibleAliases: PossibleAliasProposal[] = []) => [
   ...(metric ? [{ key: "metric", title: "KPI selected", detail: metric.selectionReason ?? `Selected ${metric.label ?? metric.name} as the KPI.`, count: 1, severity: "success" as const }] : []),
   ...(currency ? [{ key: "currency", title: "Display currency", detail: currency.detected ? `${currency.currencyCode} was detected from the uploaded KPI values. You can change this display setting at any time; values are not converted.` : `Currency was not detected, so display defaults to ${currency.currencyCode}. You can change this display setting at any time; values are not converted.`, count: 1, severity: currency.detected ? "success" as const : "info" as const }] : []),
   { key: "duplicates", title: "Exact duplicates excluded", detail: "Exact cleaned-row duplicates are retained for review but excluded from the default calculation.", count: stats.exactDuplicates, severity: stats.exactDuplicates ? "success" : "info" },
   { key: "possible", title: "Possible duplicates flagged", detail: "Rows sharing a company or customer, date, and KPI value are kept for your decision.", count: stats.possibleDuplicates, severity: stats.possibleDuplicates ? "warning" : "info" },
+  ...(possibleAliases.length ? [{ key: "possible-aliases", title: "Possible abbreviation aliases need review", detail: "These are low-frequency abbreviation/full-name pairs in the same location column. They have not been merged; confirm each relationship before changing your analysis.", count: possibleAliases.length, severity: "warning" as const, proposals: possibleAliases }] : []),
   { key: "fuzzy", title: "High-confidence category alias groups", detail: `${stats.fuzzyCategoryRows.toLocaleString()} individual category cells were reconciled across ${stats.fuzzyCategoryMerges.toLocaleString()} distinct alias group${stats.fuzzyCategoryMerges === 1 ? "" : "s"}.`, count: stats.fuzzyCategoryMerges, severity: stats.fuzzyCategoryMerges ? "success" : "info" },
   { key: "outliers", title: "Outliers flagged for review", detail: "IQR-based outlier flags never remove values automatically.", count: stats.outliers, severity: stats.outliers ? "warning" : "info" },
   { key: "dates", title: "Dates standardised", detail: "Recognisable mixed date formats were converted to ISO format.", count: stats.dateChanges, severity: "success" },
@@ -672,12 +684,12 @@ const knownCategoryAlias = (value: string, column: string) => {
   const compact = compactCategory(value);
   const columnName = normalise(column);
   if (/(region|state|city|location|area)/.test(columnName)) {
-    if (["ny", "nyc", "newyork"].includes(compact)) return "New York";
-    if (["la", "losangeles"].includes(compact)) return "Los Angeles";
-    if (["ph", "portharcourt"].includes(compact)) return "Port Harcourt";
-    if (["uk", "unitedkingdom", "greatbritain"].includes(compact)) return "United Kingdom";
-    if (["eastcoast", "ecoast"].includes(compact)) return "East Coast";
-    if (["westcoast", "wcoast"].includes(compact)) return "West Coast";
+    // Missing separators are deterministic formatting; acronym-style values (NY, LA, UK, E Coast)
+    // are intentionally excluded and can only appear as review-only possible aliases.
+    if (compact === "newyork") return "New York";
+    if (compact === "losangeles") return "Los Angeles";
+    if (compact === "eastcoast") return "East Coast";
+    if (compact === "westcoast") return "West Coast";
   }
   if (/(country|nation|market)/.test(columnName) && compact === "unitedstates") return "United States";
   if (/(industry|sector)/.test(columnName) && ["crypto", "cryptocurrency"].includes(compact)) return "Crypto";
@@ -735,6 +747,44 @@ const preferredCategoryDisplay = (values: string[], frequency: Map<string, numbe
     || leftTitle - rightTitle
     || leftDisplay.localeCompare(rightDisplay);
 })[0]!.normalize("NFKC").replace(/[-\u2010-\u2015_\\/]+/g, " ").replace(/[.,;:!?]+$/g, "").replace(/\s+/g, " ").trim();
+
+const possibleAliasProposalId = (column: string, abbreviation: string, expansion: string) => `${normalise(column)}:${compactCategory(abbreviation)}:${compactCategory(expansion)}`;
+const isAbbreviationToken = (value: string) => /^(?:[A-Z]{2,5}|(?:[A-Z]\.){2,5})$/.test(text(value));
+const initialsFor = (value: string) => categoryMatchKey(value).split(" ").filter(Boolean).map(part => part[0]).join("").toUpperCase();
+const dismissedPossibleAliasIds = (rows: ReviewRow[]) => new Set(rows.flatMap(row => row.issues)
+  .filter(issue => issue.type === "possible-alias" && issue.message.startsWith("Dismissed possible alias: "))
+  .map(issue => issue.message.slice("Dismissed possible alias: ".length)));
+
+function findPossibleAliasProposals(rows: ReviewRow[], profiles: ColumnProfile[]): PossibleAliasProposal[] {
+  const dismissed = dismissedPossibleAliasIds(rows);
+  const proposals: PossibleAliasProposal[] = [];
+  for (const profile of profiles.filter(candidate => candidate.kind === "category" && /(region|state|city|location|area)/.test(normalise(candidate.name)))) {
+    const frequency = new Map<string, number>();
+    rows.filter(row => !row.excluded).forEach(row => {
+      const value = String(row.cleanedValues[profile.name] ?? UNKNOWN);
+      if (value !== UNKNOWN) frequency.set(value, (frequency.get(value) ?? 0) + 1);
+    });
+    const values = Array.from(frequency.keys());
+    const total = values.reduce((sum, value) => sum + (frequency.get(value) ?? 0), 0);
+    const dominant = values.slice().sort((left, right) => (frequency.get(right) ?? 0) - (frequency.get(left) ?? 0) || left.localeCompare(right))[0];
+    if (!dominant || total < 8) continue;
+    const dominantCount = frequency.get(dominant) ?? 0;
+    for (const abbreviation of values.filter(isAbbreviationToken)) {
+      const abbreviationCount = frequency.get(abbreviation) ?? 0;
+      const abbreviationLetters = abbreviation.replace(/[^A-Za-z]/g, "").toUpperCase();
+      for (const expansion of values) {
+        if (expansion === abbreviation || initialsFor(expansion) !== abbreviationLetters || categoryMatchKey(expansion).split(" ").length < 2) continue;
+        const expansionCount = frequency.get(expansion) ?? 0;
+        const combinedCount = abbreviationCount + expansionCount;
+        // This is intentionally only a low-frequency review signal. It does not prove identity and never writes a merge.
+        if (combinedCount > Math.max(6, Math.floor(total * 0.1)) || dominantCount < combinedCount * 2) continue;
+        const id = possibleAliasProposalId(profile.name, abbreviation, expansion);
+        if (!dismissed.has(id)) proposals.push({ id, column: profile.name, abbreviation, expansion, abbreviationCount, expansionCount, combinedCount, dominantValue: dominant, dominantCount });
+      }
+    }
+  }
+  return proposals.sort((left, right) => left.column.localeCompare(right.column) || left.abbreviation.localeCompare(right.abbreviation) || left.expansion.localeCompare(right.expansion));
+}
 
 function applyFuzzyCategoryReview(rows: ReviewRow[], profiles: ColumnProfile[], stats: WorkerStats) {
   const changedRows = new Set<number>();
@@ -919,6 +969,7 @@ async function recalculateFromStoredRows(importId: string, profiles: ColumnProfi
     possibleDuplicates: rows.filter(row => row.possibleDuplicate).length,
     outliers: rows.filter(row => row.isOutlier).length,
   };
+  const possibleAliases = findPossibleAliasProposals(rows, profiles);
   const baselineAnalysis = analysisFromAggregates({ aggregates: Array.from(baseline.aggregateMap.values()), profiles, usableRows: baseline.usableRows, currency });
   const flaggedOutliers = rows.filter(row => !row.excluded && row.isOutlier);
   let analysis = baselineAnalysis;
@@ -954,7 +1005,7 @@ async function recalculateFromStoredRows(importId: string, profiles: ColumnProfi
       // Preserve the baseline if removing outliers leaves too little period coverage for a valid comparison.
     }
   }
-  await updateKpiImport(importId, { status: "complete", sourceRowCount: rows.length, usableRowCount: baseline.usableRows, previewRowCount: rows.length, columnsJson: profiles, cleaningSummaryJson: logsFromStats(stats, metric, currency), analysisJson: analysis, workerCheckpointJson: { phase: "complete", processedRows: rows.length, recalculated: true }, completedAt: new Date() });
+  await updateKpiImport(importId, { status: "complete", sourceRowCount: rows.length, usableRowCount: baseline.usableRows, previewRowCount: rows.length, columnsJson: profiles, cleaningSummaryJson: logsFromStats(stats, metric, currency, possibleAliases), analysisJson: analysis, workerCheckpointJson: { phase: "complete", processedRows: rows.length, recalculated: true }, completedAt: new Date() });
   return analysis;
 }
 
@@ -1067,6 +1118,35 @@ export async function applyImportReviewAction(input: { importId: string; rowNumb
   return { success: true };
 }
 
+function applyPossibleAliasReviewDecision(rows: ReviewRow[], proposal: PossibleAliasProposal, decision: "merge" | "keep-separate") {
+  const affectedRows = rows.filter(row => !row.excluded && String(row.cleanedValues[proposal.column] ?? UNKNOWN) === proposal.abbreviation);
+  if (!affectedRows.length) throw new Error("No unchanged rows remain for this possible alias.");
+  if (decision === "merge") {
+    affectedRows.forEach(row => {
+      const previous = row.cleanedValues[proposal.column];
+      row.cleanedValues[proposal.column] = proposal.expansion;
+      row.rowSignature = signatureFor(row.cleanedValues);
+      row.changes.push({ column: proposal.column, from: previous, to: proposal.expansion, reason: "Merged after explicit possible-alias review" });
+    });
+    return affectedRows;
+  }
+  appendIssue(affectedRows[0]!, { type: "possible-alias", column: proposal.column, message: `Dismissed possible alias: ${proposal.id}` });
+  return [affectedRows[0]!];
+}
+
+export async function reviewPossibleAlias(input: { importId: string; proposalId: string; decision: "merge" | "keep-separate" }) {
+  const job = await getKpiImport(input.importId);
+  if (!job) throw new Error("Import job was not found.");
+  const profiles = asArray<ColumnProfile>(job.columnsJson);
+  const rows = toReviewRows(await getAllImportRows(input.importId));
+  const proposal = findPossibleAliasProposals(rows, profiles).find(candidate => candidate.id === input.proposalId);
+  if (!proposal) throw new Error("That possible alias is no longer available for review.");
+  const changedRows = applyPossibleAliasReviewDecision(rows, proposal, input.decision);
+  await persistReviewRows(input.importId, changedRows);
+  const analysis = await recalculateFromStoredRows(input.importId, profiles);
+  return { analysis };
+}
+
 export async function recalculateKpiImport(importId: string) {
   const job = await getKpiImport(importId);
   if (!job) throw new Error("Import job was not found.");
@@ -1132,6 +1212,8 @@ export const __kpiImportWorkerTesting = {
   parseUnixTimestamp,
   cleanRow,
   applyFuzzyCategoryReview,
+  findPossibleAliasProposals,
+  applyPossibleAliasReviewDecision,
   applyPossibleDuplicateReview,
   logsFromStats,
   profilingDetail,

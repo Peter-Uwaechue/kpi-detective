@@ -36,3 +36,9 @@ Categorical data-cleaning guidance recommends a layered approach: inspect values
 [1]: https://unicode.org/reports/tr15/ "Unicode Standard Annex #15: Unicode Normalization Forms"
 [2]: https://unicode-org.github.io/icu/userguide/transforms/normalization/ "ICU Documentation: Normalization"
 [3]: https://paths.grasp.study/public-courses/caf3eb31-1ef8-4d6d-8078-e83730a5abf5/modules/ad0bc595-d251-4b0e-835b-0ea024448bda/lessons/5256072e-9122-4bce-9d89-418346ef50f2 "Standardizing Categorical Data"
+
+## Correction: abbreviations are review-only, never automatic
+
+Abbreviations and full names are not formatting variants. A short token such as `PH` can be ambiguous across organisations and columns, so it must never be included in automatic category canonicalisation. The review-only design will treat a proposed abbreviation relationship as an uncertain hypothesis: it remains non-destructive, names both values and their frequencies, requires an explicit **Yes, merge** confirmation before changing stored rows, offers **No, keep separate** to dismiss it, and records the decision in the row-level audit trail. This follows the human-in-the-loop principle of reserving review and approval for uncertain or consequential changes rather than letting a model mutate records silently.[4]
+
+[4]: https://www.databricks.com/blog/human-in-the-loop "Databricks: What is Human-in-the-Loop (HITL)"
