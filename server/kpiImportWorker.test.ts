@@ -753,3 +753,35 @@ describe("generalized KPI transparency safeguards", () => {
     expect(__kpiImportWorkerTesting.defaultContainmentMergeLabel(proposal)).toBe("Card / Debit Card (merged)");
   });
 });
+
+
+describe("dot-separated operational date formats", () => {
+  it("profiles and standardises dot-separated day-first dates with times alongside mixed export formats", () => {
+    const rows: RawRecord[] = [
+      { OrderDate: "2026-12-29 08:00:00", Revenue: "100", OrderId: "ORD-1" },
+      { OrderDate: "30.12.2026 09:15", Revenue: "110", OrderId: "ORD-2" },
+      { OrderDate: "31.12.2026 23:45:59", Revenue: "120", OrderId: "ORD-3" },
+      { OrderDate: "02.01.2027 07:30", Revenue: "130", OrderId: "ORD-4" },
+      { OrderDate: "03/01/2027 11:45", Revenue: "140", OrderId: "ORD-5" },
+      { OrderDate: "4-Jan-2027", Revenue: "150", OrderId: "ORD-6" },
+      { OrderDate: "2027/01/05", Revenue: "160", OrderId: "ORD-7" },
+      { OrderDate: "06.01.2027", Revenue: "170", OrderId: "ORD-8" },
+    ];
+    const profiles = __kpiImportWorkerTesting.inferProfiles(Object.keys(rows[0]!), rows);
+    const date = __kpiImportWorkerTesting.findDate(profiles);
+    const workerStats = stats();
+    const cleaned = rows.map(row => __kpiImportWorkerTesting.cleanRow(row, profiles, workerStats));
+
+    expect(date).toMatchObject({ name: "OrderDate", kind: "date", datePreference: "day-first" });
+    expect(cleaned.map(row => row.cleanedValues.OrderDate)).toEqual([
+      "2026-12-29", "2026-12-30", "2026-12-31", "2027-01-02",
+      "2027-01-03", "2027-01-04", "2027-01-05", "2027-01-06",
+    ]);
+    expect(cleaned.flatMap(row => row.issues).some(issue => issue.type === "ambiguous-date")).toBe(false);
+  });
+
+  it("does not reinterpret clearly year-first dotted dates as ambiguous day/month dates", () => {
+    expect(__kpiImportWorkerTesting.parseDate("2026.05.09 14:20")).toBe("2026-05-09");
+    expect(__kpiImportWorkerTesting.parseDate("31.05.2026 14:20", "day-first")).toBe("2026-05-31");
+  });
+});

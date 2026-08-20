@@ -299,7 +299,11 @@ const parseDate = (value: unknown, preference: DatePreference = "ambiguous", con
   }
   const iso = raw.match(/^(\d{4})[-/.](\d{1,2})[-/.](\d{1,2})/);
   if (iso) return toIso(Number(iso[1]), Number(iso[2]), Number(iso[3]));
-  const slash = raw.match(/^(\d{1,2})[/-](\d{1,2})[/-](\d{2,4})/);
+  // Operational exports commonly use dots as day/month separators, including
+  // date-time values such as 31.12.2026 23:45. Treat dots exactly like slash
+  // and dash dates; the existing day/month ambiguity policy still decides
+  // values where both interpretations are calendar-valid.
+  const slash = raw.match(/^(\d{1,2})[./-](\d{1,2})[./-](\d{2,4})/);
   if (slash) {
     const first = Number(slash[1]);
     const second = Number(slash[2]);
@@ -356,7 +360,7 @@ const inferDateProfile = (values: unknown[]): { preference: DatePreference; cont
     const namedMonthFirst = raw.match(/^([A-Za-z]{3,9})\s+(\d{1,2}),?\s+(\d{2,4})/);
     if (namedMonthFirst) { monthFirstEvidence++; addKnownDate(parseDate(raw)); return; }
 
-    const parts = raw.match(/^(\d{1,2})[/-](\d{1,2})[/-](\d{2,4})/);
+    const parts = raw.match(/^(\d{1,2})[./-](\d{1,2})[./-](\d{2,4})/);
     if (!parts) { addKnownDate(parseDate(raw)); return; }
     const first = Number(parts[1]);
     const second = Number(parts[2]);
