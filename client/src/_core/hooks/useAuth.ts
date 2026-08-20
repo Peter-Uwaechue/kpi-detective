@@ -1,5 +1,6 @@
 import { startLogin } from "@/const";
 import { trpc } from "@/lib/trpc";
+import { clearLogtoSession, getLogtoIdToken, logtoSignOutUrl } from "@/lib/logto";
 import { supabase } from "@/lib/supabase";
 import { TRPCClientError } from "@trpc/client";
 import { useCallback, useEffect, useMemo } from "react";
@@ -29,7 +30,9 @@ export function useAuth(options?: UseAuthOptions) {
   });
 
   const logout = useCallback(async () => {
+    const hadLogtoSession = Boolean(getLogtoIdToken());
     try {
+      clearLogtoSession();
       await supabase.auth.signOut();
       await logoutMutation.mutateAsync();
     } catch (error: unknown) {
@@ -43,6 +46,9 @@ export function useAuth(options?: UseAuthOptions) {
     } finally {
       utils.auth.me.setData(undefined, null);
       await utils.auth.me.invalidate();
+      if (hadLogtoSession && typeof window !== "undefined") {
+        window.location.assign(logtoSignOutUrl());
+      }
     }
   }, [logoutMutation, utils]);
 

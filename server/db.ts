@@ -1,4 +1,4 @@
-import { eq } from "drizzle-orm";
+import { eq, sql } from "drizzle-orm";
 import { drizzle } from "drizzle-orm/postgres-js";
 import postgres from "postgres";
 import { candidateReferrals, InsertCandidateReferral, InsertUser, users } from "../drizzle/schema";
@@ -98,6 +98,24 @@ export async function getUserByOpenId(openId: string) {
   const result = await db.select().from(users).where(eq(users.openId, openId)).limit(1);
 
   return result.length > 0 ? result[0] : undefined;
+}
+
+/**
+ * Returns at most two matching accounts so callers can link an externally
+ * verified email only when the legacy identity match is unambiguous.
+ */
+export async function getUsersByVerifiedEmail(email: string) {
+  const db = await getDb();
+  if (!db) {
+    console.warn("[Database] Cannot search users by email: database not available");
+    return [];
+  }
+
+  return db
+    .select()
+    .from(users)
+    .where(sql`lower(${users.email}) = lower(${email})`)
+    .limit(2);
 }
 
 export async function createCandidateReferral(referral: InsertCandidateReferral): Promise<void> {

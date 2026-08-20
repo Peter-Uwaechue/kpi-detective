@@ -6,6 +6,7 @@ import superjson from "superjson";
 import { Router } from "wouter";
 import App from "./App";
 import { startLogin } from "./const";
+import { getLogtoIdToken } from "./lib/logto";
 import { trpc } from "./lib/trpc";
 import { supabase } from "./lib/supabase";
 import "./index.css";
@@ -38,6 +39,9 @@ const trpcClient = trpc.createClient({
     url: "/api/trpc",
     transformer: superjson,
     async headers() {
+      const logtoToken = getLogtoIdToken();
+      if (logtoToken) return { Authorization: `Bearer ${logtoToken}` };
+
       const { data } = await supabase.auth.getSession();
       return data.session ? { Authorization: `Bearer ${data.session.access_token}` } : {};
     },
