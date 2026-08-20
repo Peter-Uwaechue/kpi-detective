@@ -672,4 +672,18 @@ describe("KPI import category and text-safety matrix", () => {
     expect(afterDismissal.proposals).toEqual([{ ...proposal, status: "kept-separate" }]);
     expect(rows.map(item => item.cleanedValues.Location)).toEqual(["Card", "Debit Card"]);
   });
+
+  it("creates JSONB-safe stable IDs for containment proposals", () => {
+    const rows = [row(1, "Card"), row(2, "Debit Card")];
+    const proposal = __kpiImportWorkerTesting.detectContainmentReviewProposals(rows, categoryProfile, { proposals: [] }).proposals[0]!;
+
+    expect(proposal.id).toMatch(/^containment-[a-f0-9]{64}$/);
+    expect(proposal.id).not.toContain("\u0000");
+    expect(JSON.stringify({ containmentReview: { proposals: [proposal] } })).not.toContain("\\u0000");
+  });
+
+  it("never stores raw database payloads as a user-facing import failure", () => {
+    expect(__kpiImportWorkerTesting.publicImportFailureMessage(new Error("Failed query: update kpi_imports set worker_checkpoint_json = $1 with {\\\"proposals\\\":[{...}]"))).toBe("We could not process this import. Please try again, or use a smaller CSV or XLSX file.");
+    expect(__kpiImportWorkerTesting.publicImportFailureMessage(new Error("File exceeds the 5MB limit for this no-worker version. Please upload a smaller file."))).toContain("File exceeds");
+  });
 });

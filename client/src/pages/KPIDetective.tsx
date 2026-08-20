@@ -102,6 +102,14 @@ const containmentReviewProposals = (value: unknown) => {
   return Array.isArray(review.proposals) ? review.proposals as ContainmentReviewProposal[] : [];
 };
 
+const safeImportError = (reason: unknown, fallback: string) => {
+  const message = reason instanceof Error ? reason.message.trim() : "";
+  // Do not expose database internals, SQL fragments, JSON payloads, or stack
+  // details if an unexpected server failure reaches a browser mutation.
+  if (!message || message.length > 320 || /failed query|worker_checkpoint|kpi_import|cleaning_summary|jsonb|postgres|drizzle|sqlstate|\b(?:select|update|insert|delete)\b.+\b(?:from|set|into)\b|\$\d+|\{[^}]*\"(?:proposals|params)\"/i.test(message)) return fallback;
+  return message;
+};
+
 function Logo() {
   return <div className="kpi-logo" aria-label="KPI Detective"><span className="kpi-logo-mark"><span /><span /><span /></span><span>KPI <b>Detective</b></span></div>;
 }
@@ -317,7 +325,7 @@ export default function KPIDetective() {
       await remoteStatus.refetch();
       setShowData(false);
       setStage("results");
-    } catch (reason) { setError(reason instanceof Error ? reason.message : "We could not recalculate this import."); }
+    } catch (reason) { setError(safeImportError(reason, "We could not recalculate this import. Please try again.")); }
   };
 
   useEffect(() => {
@@ -335,7 +343,7 @@ export default function KPIDetective() {
       setStage("review");
     }
     if (remoteImport.status === "failed" || remoteImport.status === "cancelled") {
-      setError(remoteImport.errorMessage || "This file could not be processed. Please use a smaller CSV or XLSX file and try again.");
+      setError(safeImportError(new Error(remoteImport.errorMessage || ""), "This file could not be processed. Please use a smaller CSV or XLSX file and try again."));
       setStage("upload");
     }
   }, [remoteImport]);
@@ -347,7 +355,7 @@ export default function KPIDetective() {
       const result = await reviewContainment.mutateAsync({ importId: remoteImportId, proposalId, decision });
       if (result.analysis) setAnalysis(result.analysis as KpiAnalysis);
       await remoteStatus.refetch();
-    } catch (reason) { setError(reason instanceof Error ? reason.message : "We could not save that containment-review decision."); }
+    } catch (reason) { setError(safeImportError(reason, "Something went wrong saving your review — please try again.")); }
   };
 
   const chooseRemoteCurrency = async (currencyCode: string) => {
@@ -357,7 +365,7 @@ export default function KPIDetective() {
       const result = await setRemoteCurrency.mutateAsync({ importId: remoteImportId, currencyCode });
       setAnalysis(result.analysis as KpiAnalysis);
       await remoteStatus.refetch();
-    } catch (reason) { setError(reason instanceof Error ? reason.message : "We could not update the display currency."); }
+    } catch (reason) { setError(safeImportError(reason, "We could not update the display currency. Please try again.")); }
   };
 
   const chooseRemoteMetric = async () => {
@@ -368,7 +376,7 @@ export default function KPIDetective() {
       setAnalysis(result.analysis as KpiAnalysis);
       setRequestedMetric(activeRequestedMetric);
       await remoteStatus.refetch();
-    } catch (reason) { setError(reason instanceof Error ? reason.message : "We could not update the KPI selection."); }
+    } catch (reason) { setError(safeImportError(reason, "We could not update the KPI selection. Please try again.")); }
   };
 
   const startCleaning = (rows: Record<string, unknown>[], name: string) => {
@@ -416,7 +424,7 @@ export default function KPIDetective() {
       await completeUpload.mutateAsync({ importId: prepared.importId });
     } catch (reason) {
       setStage("upload");
-      setError(reason instanceof Error ? reason.message : "We could not process this import. Please try a smaller file.");
+      setError(safeImportError(reason, "We could not process this import. Please try a smaller file."));
     }
   };
 

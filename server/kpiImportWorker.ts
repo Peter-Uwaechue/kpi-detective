@@ -917,7 +917,16 @@ function applyFuzzyCategoryReview(rows: ReviewRow[], profiles: ColumnProfile[], 
   return changedRows;
 }
 
-const containmentProposalId = (column: string, containedValue: string, containingValue: string) => `${column}\u0000${containedValue}\u0000${containingValue}`;
+const containmentProposalId = (column: string, containedValue: string, containingValue: string) => `containment-${crypto.createHash("sha256").update(JSON.stringify([column, containedValue, containingValue])).digest("hex")}`;
+
+const publicImportFailureMessage = (error: unknown) => {
+  const message = error instanceof Error ? error.message.trim() : "";
+  // Preserve the deliberate, actionable importer validation messages. Database
+  // driver output can include SQL and user data, so it must never be persisted
+  // to an import record or reflected back to the browser.
+  if (/^(File exceeds|The uploaded spreadsheet has no header row|KPI Detective supports streaming CSV and XLSX|We could not identify both a reliable numeric KPI and date column|At least two dated periods are required)/.test(message)) return message.slice(0, 1200);
+  return "We could not process this import. Please try again, or use a smaller CSV or XLSX file.";
+};
 
 function detectContainmentReviewProposals(rows: ReviewRow[], profiles: ColumnProfile[], existing: ContainmentReviewState): ContainmentReviewState {
   const existingById = new Map(existing.proposals.map(proposal => [proposal.id, proposal]));
@@ -1347,7 +1356,7 @@ export async function processNextQueuedImport() {
   if (!job) return null;
   try { await processKpiImport(job.id, { claimed: true }); return job.id; }
   catch (error) {
-    await updateKpiImport(job.id, { status: "failed", errorMessage: error instanceof Error ? error.message.slice(0, 4000) : "Unexpected worker failure", completedAt: new Date() });
+    await updateKpiImport(job.id, { status: "failed", errorMessage: publicImportFailureMessage(error), completedAt: new Date() });
     throw error;
   }
 }
@@ -1382,6 +1391,7 @@ export const __kpiImportWorkerTesting = {
   storedWorkerStats,
   profilingDetail,
   profilingFailureMessage,
+  publicImportFailureMessage,
   signatureFor,
 };
 
