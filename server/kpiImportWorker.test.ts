@@ -785,3 +785,68 @@ describe("dot-separated operational date formats", () => {
     expect(__kpiImportWorkerTesting.parseDate("31.05.2026 14:20", "day-first")).toBe("2026-05-31");
   });
 });
+
+
+describe("KPI import cross-field date and tax semantics safeguards", () => {
+  const freshStats = () => ({
+    sourceRows: 0,
+    usableRows: 0,
+    exactDuplicates: 0,
+    missingNumeric: 0,
+    invalidNumeric: 0,
+    dateChanges: 0,
+    numericChanges: 0,
+    categoryChanges: 0,
+    fuzzyCategoryMerges: 0,
+    fuzzyCategoryRows: 0,
+    possibleDuplicates: 0,
+    outliers: 0,
+    outlierColumns: {},
+  });
+
+  it("uses valid Year/Month/Day components to resolve ambiguous populated primary dates", () => {
+    const rows: RawRecord[] = [
+      { "Order Date": "1/12/2025", Year: "2025", Month: "12", Day: "1", "Net Sales": "100", City: "Abuja" },
+      { "Order Date": "2/12/2025", Year: "2025", Month: "12", Day: "2", "Net Sales": "120", City: "Abuja" },
+      { "Order Date": "12/1/2026", Year: "2026", Month: "1", Day: "12", "Net Sales": "140", City: "Abuja" },
+      { "Order Date": "13/1/2026", Year: "2026", Month: "1", Day: "13", "Net Sales": "160", City: "Abuja" },
+    ];
+    const profiles = __kpiImportWorkerTesting.inferProfiles(Object.keys(rows[0]!), rows);
+    const primaryDate = profiles.find(profile => profile.name === "Order Date");
+    const stats = freshStats();
+    const cleaned = rows.map(row => __kpiImportWorkerTesting.cleanRow(row, profiles, stats));
+
+    expect(primaryDate).toMatchObject({ kind: "date" });
+    expect(profiles.find(profile => profile.name === "__derived_date__")).toMatchObject({ kind: "date" });
+    expect(cleaned.map(row => row.cleanedValues["Order Date"])).toEqual(["2025-12-01", "2025-12-02", "2026-01-12", "2026-01-13"]);
+    expect(cleaned[0]?.changes).toEqual(expect.arrayContaining([
+      expect.objectContaining({ column: "Order Date", reason: "Resolved ambiguous date from Year/Month/Day columns", to: "2025-12-01" }),
+    ]));
+  });
+
+  it("treats explicit VAT Amount as money while keeping VAT Rate as a percentage", () => {
+    const amountRows: RawRecord[] = [
+      { Date: "2026-01-01", Quantity: "2", "Unit Price": "100", "Discount Rate": "10", "VAT Amount": "15", City: "Abuja" },
+      { Date: "2026-01-02", Quantity: "3", "Unit Price": "100", "Discount Rate": "0", "VAT Amount": "0", City: "Abuja" },
+      { Date: "2026-01-03", Quantity: "4", "Unit Price": "100", "Discount Rate": "0", "VAT Amount": "0", City: "Abuja" },
+    ];
+    const amountProfiles = __kpiImportWorkerTesting.inferProfiles(Object.keys(amountRows[0]!), amountRows);
+    const amountDerived = amountProfiles.find(profile => profile.name === "__derived_amount__");
+    const amountCleaned = __kpiImportWorkerTesting.cleanRow(amountRows[0]!, amountProfiles, freshStats());
+
+    expect(amountDerived).toMatchObject({ metricRecipe: { taxColumn: "VAT Amount", taxMode: "amount", discountColumn: "Discount Rate", discountMode: "percentage" } });
+    expect(amountCleaned.cleanedValues.__derived_amount__).toBe(195);
+
+    const rateRows: RawRecord[] = [
+      { Date: "2026-01-01", Quantity: "2", "Unit Price": "100", "VAT Rate": "7.5", City: "Abuja" },
+      { Date: "2026-01-02", Quantity: "3", "Unit Price": "100", "VAT Rate": "0", City: "Abuja" },
+      { Date: "2026-01-03", Quantity: "4", "Unit Price": "100", "VAT Rate": "0", City: "Abuja" },
+    ];
+    const rateProfiles = __kpiImportWorkerTesting.inferProfiles(Object.keys(rateRows[0]!), rateRows);
+    const rateDerived = rateProfiles.find(profile => profile.name === "__derived_amount__");
+    const rateCleaned = __kpiImportWorkerTesting.cleanRow(rateRows[0]!, rateProfiles, freshStats());
+
+    expect(rateDerived).toMatchObject({ metricRecipe: { taxColumn: "VAT Rate", taxMode: "percentage" } });
+    expect(rateCleaned.cleanedValues.__derived_amount__).toBe(215);
+  });
+});

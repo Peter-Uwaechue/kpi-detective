@@ -55,12 +55,15 @@ type DateRecipe = {
   monthColumn: string;
   dayColumn: string;
 };
+type AdjustmentMode = "percentage" | "amount";
 type MetricRecipe = {
   kind: "quantity_times_price" | "quantity_times_cost";
   quantityColumn: string;
   unitValueColumn: string;
   discountColumn?: string;
+  discountMode?: AdjustmentMode;
   taxColumn?: string;
+  taxMode?: AdjustmentMode;
 };
 type ColumnProfile = {
   name: string;
@@ -435,6 +438,20 @@ const inferBaseProfiles = (headers: string[], samples: RawRecord[]): ColumnProfi
 
 const headerMatches = (name: string, terms: string[]) => terms.some(term => normalise(name) === term || normalise(name).includes(term));
 
+/**
+ * An explicit monetary noun wins over tax vocabulary: `VAT Amount` means an
+ * amount to add, whereas `VAT Rate` or `Tax %` means a percentage of the base.
+ * Explicitly named rates use percentage arithmetic. Bare `VAT`/`GST` retain
+ * their conventional rate meaning; bare generic `Tax` and `Discount` retain
+ * the historical amount interpretation unless their header says otherwise.
+ */
+const adjustmentModeForHeader = (name: string, fallback: AdjustmentMode): AdjustmentMode => {
+  const header = normalise(name);
+  if (/\b(amount|value|total|charge|fee|paid)\b/.test(header)) return "amount";
+  if (/percent|percentage|pct|%|rate|ratio/.test(header)) return "percentage";
+  return fallback;
+};
+
 const deriveMetricProfile = (profiles: ColumnProfile[]): ColumnProfile | null => {
   const numeric = profiles.filter(profile => profile.kind === "number");
   const quantity = numeric.filter(profile => headerMatches(profile.name, QUANTITY_TERMS)).sort((left, right) => headerScore(right.name, QUANTITY_TERMS) - headerScore(left.name, QUANTITY_TERMS))[0];
@@ -444,7 +461,13 @@ const deriveMetricProfile = (profiles: ColumnProfile[]): ColumnProfile | null =>
   const unitValue = unitPrice ?? unitCost!;
   const discount = numeric.find(profile => headerMatches(profile.name, DISCOUNT_TERMS));
   const tax = numeric.find(profile => headerMatches(profile.name, TAX_TERMS));
-  const recipe: MetricRecipe = { kind: unitPrice ? "quantity_times_price" : "quantity_times_cost", quantityColumn: quantity.name, unitValueColumn: unitValue.name, ...(discount ? { discountColumn: discount.name } : {}), ...(tax ? { taxColumn: tax.name } : {}) };
+  const recipe: MetricRecipe = {
+    kind: unitPrice ? "quantity_times_price" : "quantity_times_cost",
+    quantityColumn: quantity.name,
+    unitValueColumn: unitValue.name,
+    ...(discount ? { discountColumn: discount.name, discountMode: adjustmentModeForHeader(discount.name, "amount") } : {}),
+    ...(tax ? { taxColumn: tax.name, taxMode: adjustmentModeForHeader(tax.name, /\b(?:vat|gst)\b/.test(normalise(tax.name)) ? "percentage" : "amount") } : {}),
+  };
   const adjustments = [discount && `less ${discount.name}`, tax && `plus ${tax.name}`].filter(Boolean).join("; ");
   return { name: "__derived_amount__", kind: "number", confidence: Math.min(quantity.confidence, unitValue.confidence), label: "Derived Amount", selectionReason: `Calculated as ${quantity.name} × ${unitValue.name}${adjustments ? `; ${adjustments}` : ""}.`, metricRecipe: recipe };
 };
@@ -572,6 +595,23 @@ const profilingDetail = (profiles: ColumnProfile[]) => profiles.map(profile => {
 const profilingFailureMessage = (profiles: ColumnProfile[]) => `We could not identify both a reliable date column and numeric KPI. Profiled columns: ${profilingDetail(profiles)}.`;
 const normaliseCategory = (value: unknown) => text(value).replace(/\s+/g, " ").trim() || UNKNOWN;
 
+const dateFromRecipe = (row: RawRecord, recipe: DateRecipe) => {
+  const year = parseNumber(row[recipe.yearColumn]);
+  const month = parseNumber(row[recipe.monthColumn]);
+  const day = parseNumber(row[recipe.dayColumn]);
+  return year !== null && month !== null && day !== null ? toIso(year, month, day) : null;
+};
+
+const isAmbiguousNumericDate = (value: unknown) => {
+  const parts = text(value).match(/^(\d{1,2})[./-](\d{1,2})[./-](\d{2,4})(?:\D|$)/);
+  return Boolean(parts && Number(parts[1]) <= 12 && Number(parts[2]) <= 12 && Number(parts[1]) !== Number(parts[2]));
+};
+
+const corroboratingDateForRow = (row: RawRecord, profiles: ColumnProfile[]) => {
+  const recipe = profiles.find(profile => profile.dateRecipe)?.dateRecipe;
+  return recipe ? dateFromRecipe(row, recipe) : null;
+};
+
 function cleanRow(row: RawRecord, profiles: ColumnProfile[], stats: WorkerStats) {
   const rawValues: RawRecord = { ...row };
   const cleanedValues: RawRecord = {};
@@ -580,10 +620,7 @@ function cleanRow(row: RawRecord, profiles: ColumnProfile[], stats: WorkerStats)
   for (const profile of profiles) {
     if (profile.dateRecipe) {
       const recipe = profile.dateRecipe;
-      const year = parseNumber(row[recipe.yearColumn]);
-      const month = parseNumber(row[recipe.monthColumn]);
-      const day = parseNumber(row[recipe.dayColumn]);
-      const derived = year !== null && month !== null && day !== null ? toIso(year, month, day) : null;
+      const derived = dateFromRecipe(row, recipe);
       cleanedValues[profile.name] = derived;
       if (derived) { stats.dateChanges++; changes.push({ column: profile.name, from: null, to: derived, reason: `Derived date from ${recipe.yearColumn}, ${recipe.monthColumn}, and ${recipe.dayColumn}` }); }
       else issues.push({ type: "ambiguous-date", column: profile.name, message: `Could not derive a valid date from ${recipe.yearColumn}, ${recipe.monthColumn}, and ${recipe.dayColumn}.` });
@@ -598,16 +635,17 @@ function cleanRow(row: RawRecord, profiles: ColumnProfile[], stats: WorkerStats)
         stats.missingNumeric++;
         issues.push({ type: "missing", column: profile.name, message: `Could not derive ${profile.label ?? profile.name} because ${quantity === null ? recipe.quantityColumn : recipe.unitValueColumn} is missing or invalid.` });
       } else {
-        const adjustment = (column: string | undefined, direction: 1 | -1) => {
+        const adjustment = (column: string | undefined, mode: AdjustmentMode | undefined, direction: 1 | -1, fallback: AdjustmentMode) => {
           if (!column) return 0;
           const parsed = parseNumber(row[column]);
           if (parsed === null) return 0;
-          const header = normalise(column);
-          const percentageLabel = /percent|percentage|pct|%|rate|\bvat\b|\bgst\b/.test(header);
-          const amount = percentageLabel ? quantity * unitValue * (parsed / 100) : parsed;
+          const effectiveMode = mode ?? adjustmentModeForHeader(column, fallback);
+          const amount = effectiveMode === "percentage" ? quantity * unitValue * (parsed / 100) : parsed;
           return direction * amount;
         };
-        const derived = quantity * unitValue + adjustment(recipe.discountColumn, -1) + adjustment(recipe.taxColumn, 1);
+        const derived = quantity * unitValue
+          + adjustment(recipe.discountColumn, recipe.discountMode, -1, "amount")
+          + adjustment(recipe.taxColumn, recipe.taxMode, 1, "amount");
         cleanedValues[profile.name] = derived;
         changes.push({ column: profile.name, from: null, to: derived, reason: recipe.kind === "quantity_times_price" ? `Derived amount from ${recipe.quantityColumn} × ${recipe.unitValueColumn}` : `Derived amount from ${recipe.quantityColumn} × ${recipe.unitValueColumn}` });
       }
@@ -627,9 +665,23 @@ function cleanRow(row: RawRecord, profiles: ColumnProfile[], stats: WorkerStats)
     }
     if (profile.kind === "date") {
       const parsed = parseDate(raw, profile.datePreference, profile.dateContext, profile.acceptsExcelSerialDates, profile.acceptsUnixTimestamps);
-      cleanedValues[profile.name] = parsed ?? raw;
-      if (parsed && parsed !== raw) { stats.dateChanges++; changes.push({ column: profile.name, from: raw, to: parsed, reason: "Standardised date" }); }
-      if (!parsed) issues.push({ type: "ambiguous-date", column: profile.name, message: "Could not standardise date" });
+      const corroboratingDate = corroboratingDateForRow(row, profiles);
+      const useCorroboratingDate = Boolean(corroboratingDate && (isAmbiguousNumericDate(raw) || !parsed));
+      const resolved = useCorroboratingDate ? corroboratingDate : parsed;
+      cleanedValues[profile.name] = resolved ?? raw;
+      if (resolved && resolved !== raw) {
+        stats.dateChanges++;
+        changes.push({
+          column: profile.name,
+          from: raw,
+          to: resolved,
+          reason: useCorroboratingDate ? "Resolved ambiguous date from Year/Month/Day columns" : "Standardised date",
+        });
+      }
+      if (!resolved) issues.push({ type: "ambiguous-date", column: profile.name, message: "Could not standardise date" });
+      if (parsed && corroboratingDate && parsed !== corroboratingDate && !isAmbiguousNumericDate(raw)) {
+        issues.push({ type: "ambiguous-date", column: profile.name, message: "Primary date conflicts with separate Year/Month/Day columns; retained the unambiguous primary date for review." });
+      }
       continue;
     }
     if (profile.kind === "category") {
