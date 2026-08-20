@@ -94,6 +94,10 @@ type WorkerStats = {
   possibleDuplicates: number;
   outliers: number;
 };
+type CategoryReconciliationStats = {
+  groups: number;
+  rows: number;
+};
 type ReviewRow = {
   rowNumber: number;
   rawValues: RawRecord;
@@ -671,16 +675,16 @@ function fullCauseImpact(aggregates: AnalysisAggregate[], metricColumn: string, 
   return current - previous;
 }
 
-const logsFromStats = (stats: WorkerStats, metric?: ColumnProfile, currency?: CurrencyDetection) => [
+const logsFromStats = (stats: WorkerStats, metric?: ColumnProfile, currency?: CurrencyDetection, reconciliations: CategoryReconciliationStats = { groups: stats.fuzzyCategoryMerges, rows: stats.fuzzyCategoryRows }) => [
   ...(metric ? [{ key: "metric", title: "KPI selected", detail: metric.selectionReason ?? `Selected ${metric.label ?? metric.name} as the KPI.`, count: 1, severity: "success" as const }] : []),
   ...(currency ? [{ key: "currency", title: "Display currency", detail: currency.detected ? `${currency.currencyCode} was detected from the uploaded KPI values. You can change this display setting at any time; values are not converted.` : `Currency was not detected, so display defaults to ${currency.currencyCode}. You can change this display setting at any time; values are not converted.`, count: 1, severity: currency.detected ? "success" as const : "info" as const }] : []),
   { key: "duplicates", title: "Exact duplicates excluded", detail: "Exact cleaned-row duplicates are retained for review but excluded from the default calculation.", count: stats.exactDuplicates, severity: stats.exactDuplicates ? "success" : "info" },
   { key: "possible", title: "Possible duplicates flagged", detail: "Rows sharing a company or customer, date, and KPI value are kept for your decision.", count: stats.possibleDuplicates, severity: stats.possibleDuplicates ? "warning" : "info" },
-  { key: "fuzzy", title: "High-confidence category alias groups", detail: `${stats.fuzzyCategoryRows.toLocaleString()} individual category cells were reconciled across ${stats.fuzzyCategoryMerges.toLocaleString()} distinct alias group${stats.fuzzyCategoryMerges === 1 ? "" : "s"}.`, count: stats.fuzzyCategoryMerges, severity: stats.fuzzyCategoryMerges ? "success" : "info" },
+  { key: "fuzzy", title: "Category reconciliation groups", detail: `${reconciliations.rows.toLocaleString()} individual category cells were reconciled across ${reconciliations.groups.toLocaleString()} distinct reconciliation group${reconciliations.groups === 1 ? "" : "s"}. Includes deterministic formatting variants (case, whitespace, punctuation, separators, and Unicode), controlled aliases, and only unambiguous high-confidence near-duplicates.`, count: reconciliations.groups, severity: reconciliations.groups ? "success" : "info" },
   { key: "outliers", title: "Outliers flagged for review", detail: "IQR-based outlier flags never remove values automatically.", count: stats.outliers, severity: stats.outliers ? "warning" : "info" },
   { key: "dates", title: "Dates standardised", detail: "Recognisable mixed date formats were converted to ISO format.", count: stats.dateChanges, severity: "success" },
   { key: "numbers", title: "Numbers and currencies standardised", detail: "Currency symbols and supported currency codes were removed while retaining numeric values.", count: stats.numericChanges, severity: "success" },
-  { key: "categories", title: "Category whitespace standardised", detail: "Count of individual category cells changed only to trim or collapse whitespace. Alias reconciliation is reported separately above.", count: stats.categoryChanges, severity: "success" },
+  { key: "categories", title: "Category whitespace standardised", detail: "Count of individual category cells changed during direct trim or internal-whitespace cleanup. Reconciliation groups are reported separately above.", count: stats.categoryChanges, severity: "success" },
   { key: "invalid", title: "Invalid numeric values flagged", detail: "Invalid numeric values remain visible but do not affect the selected KPI.", count: stats.invalidNumeric, severity: stats.invalidNumeric ? "warning" : "info" },
   { key: "missing", title: "Missing numeric values flagged", detail: "Missing numeric values remain visible but do not affect the selected KPI.", count: stats.missingNumeric, severity: stats.missingNumeric ? "warning" : "info" },
 ];
@@ -932,6 +936,45 @@ async function writeAggregateMap(importId: string, aggregateMap: Map<string, Agg
   for (let index = 0; index < aggregates.length; index += BATCH_SIZE) await writeImportAggregates(importId, aggregates.slice(index, index + BATCH_SIZE));
 }
 
+const automaticCategoryReconciliation = (change: CellChange) => [
+  "Standardised category whitespace",
+  "Standardised equivalent category formatting",
+  "Mapped a controlled category alias",
+  "Merged a high-confidence near-duplicate category",
+].includes(change.reason);
+
+const categoryReconciliationStats = (rows: ReviewRow[], profiles: ColumnProfile[]): CategoryReconciliationStats => {
+  const categoryColumns = new Set(profiles.filter(profile => profile.kind === "category").map(profile => profile.name));
+  const groups = new Set<string>();
+  let reconciledCells = 0;
+  rows.forEach(row => {
+    categoryColumns.forEach(column => {
+      if (!row.changes.some(change => change.column === column && automaticCategoryReconciliation(change))) return;
+      const raw = String(row.rawValues[column] ?? "");
+      const final = String(row.cleanedValues[column] ?? UNKNOWN);
+      if (!raw || raw === final) return;
+      groups.add(`${column}\u0000${final}`);
+      reconciledCells++;
+    });
+  });
+  return { groups: groups.size, rows: reconciledCells };
+};
+
+const storedWorkerStats = (rows: ReviewRow[], usableRows: number): WorkerStats => ({
+  sourceRows: rows.length,
+  usableRows,
+  exactDuplicates: rows.filter(row => row.exactDuplicate).length,
+  missingNumeric: rows.flatMap(row => row.issues).filter(issue => issue.type === "missing").length,
+  invalidNumeric: rows.flatMap(row => row.issues).filter(issue => issue.type === "invalid-number").length,
+  dateChanges: rows.flatMap(row => row.changes).filter(change => change.reason === "Standardised date").length,
+  numericChanges: rows.flatMap(row => row.changes).filter(change => change.reason === "Standardised numeric or currency value").length,
+  categoryChanges: rows.flatMap(row => row.changes).filter(change => change.reason === "Standardised category whitespace").length,
+  fuzzyCategoryMerges: new Set(rows.flatMap(row => row.changes).filter(change => change.reason === "Merged a high-confidence near-duplicate category").map(change => `${change.column}\u0000${String(change.to)}`)).size,
+  fuzzyCategoryRows: rows.flatMap(row => row.changes).filter(change => change.reason === "Merged a high-confidence near-duplicate category").length,
+  possibleDuplicates: rows.filter(row => row.possibleDuplicate).length,
+  outliers: rows.filter(row => row.isOutlier).length,
+});
+
 const displayCurrencyForRows = (rows: ReviewRow[], metric: ColumnProfile, existingAnalysis: unknown): CurrencyDetection => {
   const existing = asRecord(existingAnalysis);
   const manualCode = existing.currencySource === "manual" ? normaliseCurrencyCode(text(existing.currencyCode)) : null;
@@ -966,20 +1009,8 @@ async function recalculateFromStoredRows(importId: string, profiles: ColumnProfi
   const baseline = buildAggregateMap(true);
   await clearImportAggregates(importId);
   await writeAggregateMap(importId, baseline.aggregateMap);
-  const stats: WorkerStats = {
-    sourceRows: rows.length,
-    usableRows: baseline.usableRows,
-    exactDuplicates: rows.filter(row => row.exactDuplicate).length,
-    missingNumeric: rows.flatMap(row => row.issues).filter(issue => issue.type === "missing").length,
-    invalidNumeric: rows.flatMap(row => row.issues).filter(issue => issue.type === "invalid-number").length,
-    dateChanges: rows.flatMap(row => row.changes).filter(change => change.reason === "Standardised date").length,
-    numericChanges: rows.flatMap(row => row.changes).filter(change => change.reason === "Standardised numeric or currency value").length,
-    categoryChanges: rows.flatMap(row => row.changes).filter(change => change.reason === "Standardised category whitespace").length,
-    fuzzyCategoryMerges: new Set(rows.flatMap(row => row.changes).filter(change => change.reason === "Merged a high-confidence near-duplicate category").map(change => `${change.column}\u0000${String(change.to)}`)).size,
-    fuzzyCategoryRows: rows.flatMap(row => row.changes).filter(change => change.reason === "Merged a high-confidence near-duplicate category").length,
-    possibleDuplicates: rows.filter(row => row.possibleDuplicate).length,
-    outliers: rows.filter(row => row.isOutlier).length,
-  };
+  const stats = storedWorkerStats(rows, baseline.usableRows);
+  const reconciliations = categoryReconciliationStats(rows, profiles);
   const baselineAnalysis = analysisFromAggregates({ aggregates: Array.from(baseline.aggregateMap.values()), profiles, usableRows: baseline.usableRows, currency });
   const flaggedOutliers = rows.filter(row => !row.excluded && row.isOutlier);
   let analysis = baselineAnalysis;
@@ -1015,7 +1046,7 @@ async function recalculateFromStoredRows(importId: string, profiles: ColumnProfi
       // Preserve the baseline if removing outliers leaves too little period coverage for a valid comparison.
     }
   }
-  await updateKpiImport(importId, { status: "complete", sourceRowCount: rows.length, usableRowCount: baseline.usableRows, previewRowCount: rows.length, columnsJson: profiles, cleaningSummaryJson: logsFromStats(stats, metric, currency), analysisJson: analysis, workerCheckpointJson: { phase: "complete", processedRows: rows.length, recalculated: true }, completedAt: new Date() });
+  await updateKpiImport(importId, { status: "complete", sourceRowCount: rows.length, usableRowCount: baseline.usableRows, previewRowCount: rows.length, columnsJson: profiles, cleaningSummaryJson: logsFromStats(stats, metric, currency, reconciliations), analysisJson: analysis, workerCheckpointJson: { phase: "complete", processedRows: rows.length, recalculated: true }, completedAt: new Date() });
   return analysis;
 }
 
@@ -1141,6 +1172,25 @@ export async function repairDeprecatedAutomaticAbbreviationMerges(importId: stri
   return true;
 }
 
+export async function refreshKpiImportCleaningSummary(importId: string) {
+  const job = await getKpiImport(importId);
+  if (!job) throw new Error("Import job was not found.");
+  const profiles = asArray<ColumnProfile>(job.columnsJson);
+  const metric = findMetric(profiles);
+  if (!profiles.length || !metric) return false;
+  const rows = toReviewRows(await getAllImportRows(importId));
+  const currency = displayCurrencyForRows(rows, metric, job.analysisJson);
+  const nextSummary = logsFromStats(
+    storedWorkerStats(rows, job.usableRowCount ?? 0),
+    metric,
+    currency,
+    categoryReconciliationStats(rows, profiles),
+  );
+  if (JSON.stringify(job.cleaningSummaryJson) === JSON.stringify(nextSummary)) return false;
+  await updateKpiImport(importId, { cleaningSummaryJson: nextSummary });
+  return true;
+}
+
 export async function recalculateKpiImport(importId: string) {
   const job = await getKpiImport(importId);
   if (!job) throw new Error("Import job was not found.");
@@ -1210,6 +1260,8 @@ export const __kpiImportWorkerTesting = {
   repairDeprecatedAutomaticAbbreviationMerges,
   applyPossibleDuplicateReview,
   logsFromStats,
+  categoryReconciliationStats,
+  storedWorkerStats,
   profilingDetail,
   profilingFailureMessage,
   signatureFor,

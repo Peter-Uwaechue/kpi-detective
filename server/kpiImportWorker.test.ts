@@ -76,15 +76,40 @@ describe("KPI import cleaning transparency", () => {
     const { profiles, workerStats, rows } = reviewRows();
 
     __kpiImportWorkerTesting.applyFuzzyCategoryReview(rows, profiles, workerStats);
-    const logs = __kpiImportWorkerTesting.logsFromStats(workerStats);
+    const logs = __kpiImportWorkerTesting.logsFromStats(workerStats, undefined, undefined, __kpiImportWorkerTesting.categoryReconciliationStats(rows, profiles));
     const aliasLog = logs.find(log => log.key === "fuzzy");
     const whitespaceLog = logs.find(log => log.key === "categories");
 
     expect(workerStats.categoryChanges).toBe(0);
-    expect(aliasLog).toMatchObject({ title: "High-confidence category alias groups", count: 2 });
+    expect(aliasLog).toMatchObject({ title: "Category reconciliation groups", count: 2 });
     expect(aliasLog?.detail).toContain("3 individual category cells");
     expect(whitespaceLog).toMatchObject({ title: "Category whitespace standardised", count: 0 });
-    expect(whitespaceLog?.detail).toContain("Alias reconciliation is reported separately");
+    expect(whitespaceLog?.detail).toContain("Reconciliation groups are reported separately");
+  });
+
+  it("counts deterministic case and punctuation reconciliation groups in the cleaning summary", () => {
+    const values: RawRecord[] = [
+      { Date: "2026-05-01", Revenue: "10", City: "Abuja", PaymentMethod: "CARD" },
+      { Date: "2026-05-02", Revenue: "11", City: "Abuja", PaymentMethod: "CARD" },
+      { Date: "2026-05-03", Revenue: "12", City: "abuja", PaymentMethod: "Card" },
+      { Date: "2026-05-04", Revenue: "13", City: "Abuja.", PaymentMethod: "card" },
+    ];
+    const profiles = __kpiImportWorkerTesting.inferProfiles(Object.keys(values[0]!), values);
+    const workerStats = stats();
+    const rows = values.map((value, index) => {
+      const cleaned = __kpiImportWorkerTesting.cleanRow(value, profiles, workerStats);
+      return { rowNumber: index + 1, ...cleaned, excluded: false, possibleDuplicate: false, isOutlier: false, exactDuplicate: false, rowSignature: __kpiImportWorkerTesting.signatureFor(cleaned.cleanedValues) };
+    });
+
+    __kpiImportWorkerTesting.applyFuzzyCategoryReview(rows, profiles, workerStats);
+    const reconciliation = __kpiImportWorkerTesting.categoryReconciliationStats(rows, profiles);
+    const aliasLog = __kpiImportWorkerTesting.logsFromStats(workerStats, undefined, undefined, reconciliation).find(log => log.key === "fuzzy");
+
+    expect(rows.map(row => row.cleanedValues.City)).toEqual(["Abuja", "Abuja", "Abuja", "Abuja"]);
+    expect(rows.map(row => row.cleanedValues.PaymentMethod)).toEqual(["CARD", "CARD", "CARD", "CARD"]);
+    expect(reconciliation).toEqual({ groups: 2, rows: 4 });
+    expect(aliasLog).toMatchObject({ count: 2 });
+    expect(aliasLog?.detail).toContain("4 individual category cells");
   });
 });
 
