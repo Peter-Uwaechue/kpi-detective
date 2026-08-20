@@ -142,6 +142,7 @@ export const appRouter = router({
       importId: z.string().uuid(),
       proposalId: z.string().min(1).max(1200),
       decision: z.enum(["merge", "keep-separate"]),
+      finalLabel: z.string().trim().min(1).max(160).optional(),
     })).mutation(async ({ input, ctx }) => {
       const job = await getKpiImport(input.importId, ctx.user.openId);
       if (!job) throw new Error("Import job was not found.");

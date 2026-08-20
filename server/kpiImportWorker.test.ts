@@ -30,6 +30,7 @@ const stats = () => ({
   fuzzyCategoryRows: 0,
   possibleDuplicates: 0,
   outliers: 0,
+  outlierColumns: {},
 });
 
 const reviewRows = () => {
@@ -128,6 +129,7 @@ describe("KPI import real-world data-shape matrix", () => {
     fuzzyCategoryRows: 0,
     possibleDuplicates: 0,
     outliers: 0,
+    outlierColumns: {},
   });
 
   it("derives a selected Amount from Quantity and UnitPrice while standardising mixed date formats with timestamps", () => {
@@ -685,5 +687,69 @@ describe("KPI import category and text-safety matrix", () => {
   it("never stores raw database payloads as a user-facing import failure", () => {
     expect(__kpiImportWorkerTesting.publicImportFailureMessage(new Error("Failed query: update kpi_imports set worker_checkpoint_json = $1 with {\\\"proposals\\\":[{...}]"))).toBe("We could not process this import. Please try again, or use a smaller CSV or XLSX file.");
     expect(__kpiImportWorkerTesting.publicImportFailureMessage(new Error("File exceeds the 5MB limit for this no-worker version. Please upload a smaller file."))).toContain("File exceeds");
+  });
+});
+
+
+describe("generalized KPI transparency safeguards", () => {
+  it("does not present date-component numerics as KPI choices when a usable date column exists", () => {
+    const rows: RawRecord[] = Array.from({ length: 12 }, (_, index) => ({
+      OrderDate: `2026-05-${String(index + 1).padStart(2, "0")}`,
+      OrderYear: "2026",
+      OrderMonth: "5",
+      OrderDay: String(index + 1),
+      Revenue: `$${1_000 + index * 50}`,
+      Quantity: String(5 + index),
+      Region: index % 2 ? "North" : "South",
+    }));
+    const profiles = __kpiImportWorkerTesting.inferProfiles(Object.keys(rows[0]!), rows);
+    const candidates = profiles.filter(profile => profile.isMetricCandidate);
+    const candidateNames = candidates.map(profile => profile.name);
+    const revenue = profiles.find(profile => profile.name === "Revenue");
+    const quantity = profiles.find(profile => profile.name === "Quantity");
+
+    expect(candidateNames).toEqual(expect.arrayContaining(["Revenue", "Quantity"]));
+    expect(candidateNames).not.toEqual(expect.arrayContaining(["OrderYear", "OrderMonth", "OrderDay"]));
+    expect(__kpiImportWorkerTesting.findMetric(profiles)).toMatchObject({ name: "Revenue", isSelectedMetric: true });
+    expect(revenue).toMatchObject({ validRate: 100, candidateReason: expect.stringContaining("Strong monetary KPI signal") });
+    expect(quantity).toMatchObject({ validRate: 100, candidateReason: expect.stringContaining("100% parseable values") });
+  });
+
+  it("reports field-level IQR triggers separately from unique flagged rows", () => {
+    const rows: RawRecord[] = Array.from({ length: 9 }, (_, index) => ({
+      Date: `2026-05-${String(index + 1).padStart(2, "0")}`,
+      Revenue: String(index === 8 ? 1_000 : 100 + index * 10),
+      Quantity: String(index === 8 ? 100 : index + 1),
+      Region: "North",
+    }));
+    const profiles = __kpiImportWorkerTesting.inferProfiles(Object.keys(rows[0]!), rows);
+    const workerStats = stats();
+    const review = rows.map((source, index) => {
+      const cleaned = __kpiImportWorkerTesting.cleanRow(source, profiles, workerStats);
+      return { rowNumber: index + 1, ...cleaned, excluded: false, possibleDuplicate: false, isOutlier: false, exactDuplicate: false, rowSignature: __kpiImportWorkerTesting.signatureFor(cleaned.cleanedValues) };
+    });
+
+    __kpiImportWorkerTesting.applyOutlierReview(review, profiles, workerStats);
+    const outlierLog = __kpiImportWorkerTesting.logsFromStats(workerStats).find(log => log.key === "outliers");
+
+    expect(workerStats.outliers).toBe(1);
+    expect(workerStats.outlierColumns).toMatchObject({ Revenue: 1, Quantity: 1 });
+    expect(outlierLog?.detail).toContain("Revenue: 1");
+    expect(outlierLog?.detail).toContain("Quantity: 1");
+    expect(outlierLog?.detail).toContain("1 unique row flagged in total");
+  });
+
+  it("defaults a confirmed containment merge to a neutral, auditable display label", () => {
+    const proposal = {
+      id: "containment-test",
+      column: "PaymentMethod",
+      containedValue: "Card",
+      containingValue: "Debit Card",
+      containedCount: 12,
+      containingCount: 8,
+      status: "pending" as const,
+    };
+
+    expect(__kpiImportWorkerTesting.defaultContainmentMergeLabel(proposal)).toBe("Card / Debit Card (merged)");
   });
 });

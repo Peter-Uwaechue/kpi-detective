@@ -338,3 +338,11 @@
 .containment-review-actions { display: flex; flex: none; flex-wrap: wrap; justify-content: flex-end; gap: .55rem; }
 .containment-review-actions button { min-height: 36px; font-size: .78rem; white-space: nowrap; }
 @media (max-width: 720px) { .containment-review-heading, .containment-review-item { align-items: stretch; flex-direction: column; } .containment-review-actions { justify-content: flex-start; } .containment-review-actions button { flex: 1 1 150px; } }
+
+/* Explicit post-review category naming prevents a broader source value from being presented as a more specific category. */
+.containment-final-label { display: grid; gap: 5px; margin-top: 10px; color: var(--ink-soft); font: 600 10px 'DM Mono', monospace; letter-spacing: .025em; }
+.containment-final-label input { width: min(100%, 340px); min-height: 36px; padding: 8px 10px; border: 1px solid #c9d7d2; border-radius: 8px; background: #fff; color: var(--ink); font: 500 12px 'DM Sans', sans-serif; letter-spacing: normal; }
+.containment-final-label input:focus { outline: 2px solid rgba(47, 145, 117, .28); border-color: #2b9278; }
+.containment-review-item small { display: block; max-width: 470px; margin-top: 6px; color: var(--muted); font-size: 10px; line-height: 1.4; }
+.dark-mode .containment-final-label input { border-color: #4b6461; background: #17333a; color: #eef7f4; }
+@media (max-width: 640px) { .containment-final-label input { width: 100%; } }

@@ -66,6 +66,8 @@ type ColumnProfile = {
   name: string;
   kind: ColumnKind;
   confidence: number;
+  /** Percentage of non-empty values parsed successfully for this profile type. */
+  validRate?: number;
   datePreference?: DatePreference;
   dateContext?: DateContext;
   acceptsExcelSerialDates?: boolean;
@@ -92,7 +94,10 @@ type WorkerStats = {
   fuzzyCategoryMerges: number;
   fuzzyCategoryRows: number;
   possibleDuplicates: number;
+  /** Number of unique rows flagged by at least one numeric field. */
   outliers: number;
+  /** Per-field trigger counts; a row may appear in more than one field. */
+  outlierColumns: Record<string, number>;
 };
 type CategoryReconciliationStats = {
   groups: number;
@@ -106,6 +111,8 @@ type ContainmentReviewProposal = {
   containingValue: string;
   containedCount: number;
   containingCount: number;
+  /** Explicit human-confirmed display value when a relationship is merged. */
+  finalLabel?: string;
   status: ContainmentReviewStatus;
 };
 type ContainmentReviewState = {
@@ -177,6 +184,7 @@ const containmentReviewState = (checkpoint: unknown): ContainmentReviewState => 
     const containedValue = text(proposal.containedValue);
     const containingValue = text(proposal.containingValue);
     const status = text(proposal.status) as ContainmentReviewStatus;
+    const finalLabel = text(proposal.finalLabel);
     if (!id || !column || !containedValue || !containingValue || !statuses.has(status)) return [];
     return [{
       id,
@@ -185,6 +193,7 @@ const containmentReviewState = (checkpoint: unknown): ContainmentReviewState => 
       containingValue,
       containedCount: Math.max(0, Number(proposal.containedCount) || 0),
       containingCount: Math.max(0, Number(proposal.containingCount) || 0),
+      ...(finalLabel ? { finalLabel } : {}),
       status,
     }];
   });
@@ -403,7 +412,7 @@ const inferBaseProfiles = (headers: string[], samples: RawRecord[]): ColumnProfi
   // Values—not header uniqueness—decide whether a date-like column is a date.
   // Headers such as order_date and transaction_date must not be captured by
   // the identifier heuristic merely because every date/time is distinct.
-  if (isReliableDate) return { name, kind: "date", confidence: Math.round(Math.min(99, dateRate * 88 + dateHint * 5)), datePreference: dateProfile.preference, dateContext: dateProfile.context, acceptsExcelSerialDates: acceptsExcelSerialDates || undefined, acceptsUnixTimestamps: acceptsUnixTimestamps || undefined };
+  if (isReliableDate) return { name, kind: "date", confidence: Math.round(Math.min(99, dateRate * 88 + dateHint * 5)), validRate: Math.round(dateRate * 100), datePreference: dateProfile.preference, dateContext: dateProfile.context, acceptsExcelSerialDates: acceptsExcelSerialDates || undefined, acceptsUnixTimestamps: acceptsUnixTimestamps || undefined };
   const quantityHint = headerScore(name, QUANTITY_TERMS);
   const categoryHint = headerScore(name, CATEGORY_TERMS);
   const freeTextHint = headerScore(name, FREE_TEXT_TERMS);
@@ -415,7 +424,7 @@ const inferBaseProfiles = (headers: string[], samples: RawRecord[]): ColumnProfi
   if (freeTextHint > 0 || longTextRate >= 0.5) return { name, kind: "unknown", confidence: Math.round(Math.min(95, 75 + Math.max(freeTextHint, longTextRate * 15))) };
   if (explicitIdentifier || (distinctRate > 0.92 && values.length > 7 && /\d/.test(values.map(text).join("")) && numericHint === 0 && candidateMetricHint === 0 && quantityHint === 0)) return { name, kind: "identifier", confidence: 82 };
   if (categoryHint > 0 && numericHint === 0) return { name, kind: "category", confidence: Math.round(Math.min(95, 70 + categoryHint * 6)) };
-  if (numericRate >= PROFILE_MIN_VALID_RATE) return { name, kind: "number", confidence: Math.round(Math.min(99, numericRate * 88 + numericHint * 5)) };
+  if (numericRate >= PROFILE_MIN_VALID_RATE) return { name, kind: "number", confidence: Math.round(Math.min(99, numericRate * 88 + numericHint * 5)), validRate: Math.round(numericRate * 100) };
   if (distinctRate <= 0.96 || categoryHint > 0) return { name, kind: "category", confidence: Math.round(Math.min(95, 70 + categoryHint * 6)) };
   return { name, kind: "unknown", confidence: 48 };
 });
@@ -475,14 +484,19 @@ const deriveYearMonthDayProfile = (headers: string[], samples: RawRecord[]): Col
 const metricCandidateReason = (profile: ColumnProfile) => {
   if (profile.metricRecipe) return profile.selectionReason ?? `Calculated as ${profile.label ?? profile.name}.`;
   if (headerMatches(profile.name, DIRECT_KPI_TERMS)) return `Strong monetary KPI signal from the “${profile.name}” header.`;
-  if (headerMatches(profile.name, QUANTITY_TERMS)) return `Usable numeric quantity or volume field (${profile.confidence}% valid values).`;
-  return `Usable numeric field (${profile.confidence}% valid values).`;
+  if (headerMatches(profile.name, QUANTITY_TERMS)) return `Numeric quantity or volume option (${profile.validRate ?? profile.confidence}% parseable values).`;
+  return `Numeric KPI option (${profile.validRate ?? profile.confidence}% parseable values).`;
+};
+
+const isDateSupportNumeric = (profile: ColumnProfile, profiles: ColumnProfile[]) => {
+  if (!profiles.some(candidate => candidate.kind === "date")) return false;
+  return headerMatches(profile.name, ["year", "month", "day", "week", "quarter", "fiscal"]);
 };
 
 const markMetricCandidates = (profiles: ColumnProfile[], selectedMetric: ColumnProfile | null, derivedMetric: ColumnProfile | null) => {
   const selectedName = selectedMetric?.name;
   const annotatedProfiles = profiles.map(profile => {
-    if (profile.kind !== "number" || profile.confidence < PROFILE_MIN_VALID_RATE * 100) return profile;
+    if (profile.kind !== "number" || profile.confidence < PROFILE_MIN_VALID_RATE * 100 || isDateSupportNumeric(profile, profiles)) return profile;
     return { ...profile, isMetricCandidate: true, candidateReason: metricCandidateReason(profile), isSelectedMetric: profile.name === selectedName, ...(profile.name === selectedName ? { label: selectedMetric?.label ?? profile.label ?? profile.name, selectionReason: selectedMetric?.selectionReason ?? profile.selectionReason } : {}) };
   });
   const derived = derivedMetric ? { ...derivedMetric, isSelectedMetric: selectedName === derivedMetric.name, isMetricCandidate: true, candidateReason: metricCandidateReason(derivedMetric) } : null;
@@ -717,13 +731,24 @@ function fullCauseImpact(aggregates: AnalysisAggregate[], metricColumn: string, 
   return current - previous;
 }
 
+const outlierDetail = (stats: WorkerStats) => {
+  // Imports created before field-level IQR evidence was introduced do not have
+  // this key in their persisted checkpoint. Treat that legacy state as an
+  // empty breakdown rather than breaking the complete cleaning summary.
+  const byColumn = Object.entries(stats.outlierColumns ?? {})
+    .sort((left, right) => right[1] - left[1] || left[0].localeCompare(right[0]))
+    .map(([column, count]) => `${column}: ${count.toLocaleString()}`);
+  if (!byColumn.length) return "IQR-based outlier flags never remove values automatically.";
+  return `IQR-based flags never remove values automatically. Triggered by ${byColumn.join("; ")}; ${stats.outliers.toLocaleString()} unique row${stats.outliers === 1 ? "" : "s"} flagged in total.`;
+};
+
 const logsFromStats = (stats: WorkerStats, metric?: ColumnProfile, currency?: CurrencyDetection, reconciliations: CategoryReconciliationStats = { groups: stats.fuzzyCategoryMerges, rows: stats.fuzzyCategoryRows }) => [
   ...(metric ? [{ key: "metric", title: "KPI selected", detail: metric.selectionReason ?? `Selected ${metric.label ?? metric.name} as the KPI.`, count: 1, severity: "success" as const }] : []),
   ...(currency ? [{ key: "currency", title: "Display currency", detail: currency.detected ? `${currency.currencyCode} was detected from the uploaded KPI values. You can change this display setting at any time; values are not converted.` : `Currency was not detected, so display defaults to ${currency.currencyCode}. You can change this display setting at any time; values are not converted.`, count: 1, severity: currency.detected ? "success" as const : "info" as const }] : []),
   { key: "duplicates", title: "Exact duplicates excluded", detail: "Exact cleaned-row duplicates are retained for review but excluded from the default calculation.", count: stats.exactDuplicates, severity: stats.exactDuplicates ? "success" : "info" },
   { key: "possible", title: "Possible duplicates flagged", detail: "Rows sharing a company or customer, date, and KPI value are kept for your decision.", count: stats.possibleDuplicates, severity: stats.possibleDuplicates ? "warning" : "info" },
   { key: "fuzzy", title: "Category reconciliation groups", detail: `${reconciliations.rows.toLocaleString()} individual category cells were reconciled across ${reconciliations.groups.toLocaleString()} distinct reconciliation group${reconciliations.groups === 1 ? "" : "s"}. Includes deterministic formatting variants (case, whitespace, punctuation, separators, and Unicode), controlled aliases, and only unambiguous high-confidence near-duplicates.`, count: reconciliations.groups, severity: reconciliations.groups ? "success" : "info" },
-  { key: "outliers", title: "Outliers flagged for review", detail: "IQR-based outlier flags never remove values automatically.", count: stats.outliers, severity: stats.outliers ? "warning" : "info" },
+  { key: "outliers", title: "Outliers flagged for review", detail: outlierDetail(stats), count: stats.outliers, severity: stats.outliers ? "warning" : "info" },
   { key: "dates", title: "Dates standardised", detail: "Recognisable mixed date formats were converted to ISO format.", count: stats.dateChanges, severity: "success" },
   { key: "numbers", title: "Numbers and currencies standardised", detail: "Currency symbols and supported currency codes were removed while retaining numeric values.", count: stats.numericChanges, severity: "success" },
   { key: "categories", title: "Category whitespace standardised", detail: "Count of individual category cells changed during direct trim or internal-whitespace cleanup. Reconciliation groups are reported separately above.", count: stats.categoryChanges, severity: "success" },
@@ -993,6 +1018,7 @@ function applyPossibleDuplicateReview(rows: ReviewRow[], profiles: ColumnProfile
 
 function applyOutlierReview(rows: ReviewRow[], profiles: ColumnProfile[], stats: WorkerStats) {
   const changedRows = new Set<number>();
+  stats.outlierColumns = {};
   profiles.filter(profile => profile.kind === "number").forEach(profile => {
     const values = rows.filter(row => !row.excluded).map(row => row.cleanedValues[profile.name]).filter((value): value is number => typeof value === "number").sort((left, right) => left - right);
     if (values.length < 5) return;
@@ -1008,13 +1034,16 @@ function applyOutlierReview(rows: ReviewRow[], profiles: ColumnProfile[], stats:
     if (iqr <= 0) return;
     const lower = q1 - iqr * 1.5;
     const upper = q3 + iqr * 1.5;
+    let triggeredForColumn = 0;
     rows.filter(row => !row.excluded).forEach(row => {
       const value = row.cleanedValues[profile.name];
       if (typeof value !== "number" || (value >= lower && value <= upper)) return;
+      triggeredForColumn++;
       row.isOutlier = true;
       changedRows.add(row.rowNumber);
       appendIssue(row, { type: "outlier", column: profile.name, message: `${value.toLocaleString(undefined, { maximumFractionDigits: 2 })} is outside the IQR review range (${lower.toLocaleString(undefined, { maximumFractionDigits: 2 })} to ${upper.toLocaleString(undefined, { maximumFractionDigits: 2 })}).` });
     });
+    if (triggeredForColumn) stats.outlierColumns[profile.name] = triggeredForColumn;
   });
   stats.outliers = rows.filter(row => row.isOutlier).length;
   return changedRows;
@@ -1049,6 +1078,15 @@ const categoryReconciliationStats = (rows: ReviewRow[], profiles: ColumnProfile[
   return { groups: groups.size, rows: reconciledCells };
 };
 
+const outlierTriggerCounts = (rows: ReviewRow[]) => rows
+  .flatMap(row => row.issues)
+  .filter(issue => issue.type === "outlier" && issue.column)
+  .reduce<Record<string, number>>((counts, issue) => {
+    const column = issue.column!;
+    counts[column] = (counts[column] ?? 0) + 1;
+    return counts;
+  }, {});
+
 const storedWorkerStats = (rows: ReviewRow[], usableRows: number): WorkerStats => ({
   sourceRows: rows.length,
   usableRows,
@@ -1062,6 +1100,7 @@ const storedWorkerStats = (rows: ReviewRow[], usableRows: number): WorkerStats =
   fuzzyCategoryRows: rows.flatMap(row => row.changes).filter(change => change.reason === "Merged a high-confidence near-duplicate category").length,
   possibleDuplicates: rows.filter(row => row.possibleDuplicate).length,
   outliers: rows.filter(row => row.isOutlier).length,
+  outlierColumns: outlierTriggerCounts(rows),
 });
 
 const displayCurrencyForRows = (rows: ReviewRow[], metric: ColumnProfile, existingAnalysis: unknown): CurrencyDetection => {
@@ -1119,6 +1158,11 @@ async function recalculateFromStoredRows(importId: string, profiles: ColumnProfi
         outlierExcludedPrimary: outlierExcludedPrimary ? { dimension: outlierExcludedPrimary.dimension, value: outlierExcludedPrimary.value, impact: outlierExcludedPrimary.impact } : null,
         baselinePrimaryImpactWithoutOutliers: baselinePrimaryWithoutOutliers,
         outlierImpactOnBaselinePrimary,
+        outlierExcludedPreviousTotal: outlierExcludedAnalysis.previousTotal,
+        outlierExcludedCurrentTotal: outlierExcludedAnalysis.currentTotal,
+        outlierExcludedChange: outlierExcludedAnalysis.change,
+        outlierExcludedChangePercent: outlierExcludedAnalysis.changePercent,
+        outlierExcludedRows: withoutOutliers.usableRows,
         explanationChanged,
       };
       if (explanationChanged && baselinePrimary && outlierExcludedPrimary) {
@@ -1172,7 +1216,7 @@ export async function processKpiImport(importId: string, options: { claimed?: bo
     throw new Error(detail);
   }
   await updateKpiImport(importId, { status: "ingesting", columnsJson: profiles, workerCheckpointJson: { phase: "ingesting", batchSize: BATCH_SIZE } });
-  const stats: WorkerStats = { sourceRows: 0, usableRows: 0, exactDuplicates: 0, missingNumeric: 0, invalidNumeric: 0, dateChanges: 0, numericChanges: 0, categoryChanges: 0, fuzzyCategoryMerges: 0, fuzzyCategoryRows: 0, possibleDuplicates: 0, outliers: 0 };
+  const stats: WorkerStats = { sourceRows: 0, usableRows: 0, exactDuplicates: 0, missingNumeric: 0, invalidNumeric: 0, dateChanges: 0, numericChanges: 0, categoryChanges: 0, fuzzyCategoryMerges: 0, fuzzyCategoryRows: 0, possibleDuplicates: 0, outliers: 0, outlierColumns: {} };
   let rows: ReviewRow[] = [];
   const flush = async () => {
     const payloads = rows.map(payloadFor);
@@ -1251,7 +1295,9 @@ export async function applyImportReviewAction(input: { importId: string; rowNumb
   return { success: true };
 }
 
-export async function applyContainmentReviewDecision(input: { importId: string; proposalId: string; decision: "merge" | "keep-separate" }) {
+const defaultContainmentMergeLabel = (proposal: ContainmentReviewProposal) => `${proposal.containedValue} / ${proposal.containingValue} (merged)`;
+
+export async function applyContainmentReviewDecision(input: { importId: string; proposalId: string; decision: "merge" | "keep-separate"; finalLabel?: string }) {
   const job = await getKpiImport(input.importId);
   if (!job) throw new Error("Import job was not found.");
   const profiles = asArray<ColumnProfile>(job.columnsJson);
@@ -1264,18 +1310,22 @@ export async function applyContainmentReviewDecision(input: { importId: string; 
     await updateKpiImport(input.importId, { workerCheckpointJson: withContainmentReviewState(job.workerCheckpointJson, nextState, { phase: "containment-review" }) });
     return { changedRows: 0, analysis: job.analysisJson, decision: "keep-separate" as const };
   }
+  const finalLabel = text(input.finalLabel) || defaultContainmentMergeLabel(proposal);
+  if (finalLabel.length > 160) throw new Error("Choose a final category label of 160 characters or fewer.");
   const rows = toReviewRows(await getAllImportRows(input.importId));
-  const changedRows = rows.filter(row => row.cleanedValues[proposal.column] === proposal.containedValue);
+  const sourceValues = new Set([proposal.containedValue, proposal.containingValue]);
+  const changedRows = rows.filter(row => sourceValues.has(String(row.cleanedValues[proposal.column] ?? "")));
   if (!changedRows.length) throw new Error("Those values have already changed, so this review item can no longer be merged.");
   changedRows.forEach(row => {
-    row.cleanedValues[proposal.column] = proposal.containingValue;
-    row.changes.push({ column: proposal.column, from: proposal.containedValue, to: proposal.containingValue, reason: "Merged after user-confirmed containment review" });
+    const previous = String(row.cleanedValues[proposal.column] ?? "");
+    row.cleanedValues[proposal.column] = finalLabel;
+    row.changes.push({ column: proposal.column, from: previous, to: finalLabel, reason: "Merged after user-confirmed containment review with final display label" });
     row.rowSignature = signatureFor(row.cleanedValues);
   });
   await persistReviewRows(input.importId, changedRows);
   nextState = {
     proposals: state.proposals.map(candidate => {
-      if (candidate.id === proposal.id) return { ...candidate, status: "merged" };
+      if (candidate.id === proposal.id) return { ...candidate, finalLabel, status: "merged" };
       if (candidate.status === "pending" && candidate.column === proposal.column && candidate.containedValue === proposal.containedValue) return { ...candidate, status: "superseded" };
       return candidate;
     }),
@@ -1386,7 +1436,10 @@ export const __kpiImportWorkerTesting = {
   revertDeprecatedAutomaticAbbreviationChanges,
   repairDeprecatedAutomaticAbbreviationMerges,
   applyPossibleDuplicateReview,
+  applyOutlierReview,
   logsFromStats,
+  outlierDetail,
+  defaultContainmentMergeLabel,
   categoryReconciliationStats,
   storedWorkerStats,
   profilingDetail,

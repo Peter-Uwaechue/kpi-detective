@@ -74,6 +74,12 @@ export type OutlierSensitivity = {
   outlierExcludedPrimary: Pick<CauseCard, "dimension" | "value" | "impact"> | null;
   baselinePrimaryImpactWithoutOutliers: number;
   outlierImpactOnBaselinePrimary: number;
+  /** Explicit outlier-excluded comparison basis used by displayed driver cards. */
+  outlierExcludedPreviousTotal?: number;
+  outlierExcludedCurrentTotal?: number;
+  outlierExcludedChange?: number;
+  outlierExcludedChangePercent?: number;
+  outlierExcludedRows?: number;
   explanationChanged: boolean;
 };
 
@@ -433,6 +439,16 @@ export function cleanDataset(rawRows: Record<string, unknown>[]): CleanedDataset
   });
 
   const countChanges = (predicate: (change: CellChange) => boolean) => rows.flatMap(row => row.changes).filter(predicate).length;
+  const outlierByColumn = rows.flatMap(row => row.issues)
+    .filter(issue => issue.type === "outlier" && issue.column)
+    .reduce<Record<string, number>>((counts, issue) => {
+      const column = issue.column!;
+      counts[column] = (counts[column] ?? 0) + 1;
+      return counts;
+    }, {});
+  const outlierDetail = Object.entries(outlierByColumn)
+    .sort((left, right) => right[1] - left[1] || left[0].localeCompare(right[0]))
+    .map(([column, count]) => `${column}: ${count.toLocaleString()}`);
   const removedDuplicates = rows.filter(row => row.excluded).length;
   const possibleDuplicates = rows.filter(row => row.possibleDuplicate).length;
   const outliers = rows.filter(row => row.issues.some(issue => issue.type === "outlier")).length;
@@ -446,14 +462,16 @@ export function cleanDataset(rawRows: Record<string, unknown>[]): CleanedDataset
     { key: "categories", title: "Category values standardised", detail: "Applied high-confidence case, spacing, and category normalisation only.", count: countChanges(change => change.reason.includes("category") || change.reason.includes("alias") || change.reason.includes("case")), severity: "success" },
     { key: "invalid", title: "Invalid numeric values flagged", detail: "These values are excluded only when the affected field is chosen as the headline KPI.", count: invalidValues, severity: invalidValues ? "warning" : "info" },
     { key: "missing", title: "Missing numeric values flagged", detail: "These rows stay visible and are excluded only from the affected KPI calculation.", count: missingNumericValues, severity: missingNumericValues ? "warning" : "info" },
-    { key: "outliers", title: "Outliers flagged for review", detail: "Potentially unusual values were retained and never removed automatically.", count: outliers, severity: outliers ? "warning" : "info" },
+    { key: "outliers", title: "Outliers flagged for review", detail: outlierDetail.length ? `Potentially unusual values were retained and never removed automatically. Triggered by ${outlierDetail.join("; ")}; ${outliers.toLocaleString()} unique row${outliers === 1 ? "" : "s"} flagged in total.` : "Potentially unusual values were retained and never removed automatically.", count: outliers, severity: outliers ? "warning" : "info" },
   ];
   return { columns, rows, logs, sourceRowCount: rawRows.length, warnings };
 }
 
+const isDateSupportNumeric = (column: ColumnProfile, dateAvailable: boolean) => dateAvailable && /(^|\s)(year|month|day|week|quarter|fiscal)(\s|$)/.test(normaliseText(column.name));
+
 const comparePeriods = (dataset: CleanedDataset) => {
   const date = dataset.columns.find(column => column.kind === "date");
-  const metric = [...dataset.columns].filter(column => column.kind === "number").sort((first, second) => {
+  const metric = [...dataset.columns].filter(column => column.kind === "number" && !isDateSupportNumeric(column, Boolean(date))).sort((first, second) => {
     const score = (column: ColumnProfile) => headerScore(column.name, REVENUE_TERMS) * 20 + column.validCount / Math.max(1, column.nonEmptyCount) * 10;
     return score(second) - score(first);
   })[0];
