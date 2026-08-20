@@ -644,14 +644,32 @@ describe("KPI import category and text-safety matrix", () => {
     expect(__kpiImportWorkerTesting.findMetric(profitProfiles)).toMatchObject({ name: "Profit", isSelectedMetric: true, selectionReason: expect.stringContaining("Selected manually") });
   });
 
-  it("still reconciles exact formatting equivalence in a high-cardinality field without running broad fuzzy matching", () => {
+    it("still reconciles exact formatting equivalence in a high-cardinality field without running broad fuzzy matching", () => {
     const rows = Array.from({ length: 401 }, (_, index) => row(index + 1, `Branch ${String(index + 1).padStart(3, "0")}`));
     rows.push(row(402, "Abuja."), row(403, "abuja"), row(404, "Abuja"));
     const workerStats = stats();
-
     __kpiImportWorkerTesting.applyFuzzyCategoryReview(rows, categoryProfile, workerStats);
-
     expect(rows.slice(-3).map(item => item.cleanedValues.Location)).toEqual(["Abuja", "Abuja", "Abuja"]);
     expect(rows[0]?.cleanedValues.Location).toBe("Branch 001");
+  });
+
+  it("proposes review-only whole-word containment after shared category normalisation without auto-merging", () => {
+    const rows = [row(1, "Card.\u200B"), row(2, "Card.\u200B"), row(3, "DEBIT\tCARD"), row(4, "DEBIT\tCARD"), row(5, "Car")];
+    const review = __kpiImportWorkerTesting.detectContainmentReviewProposals(rows, categoryProfile, { proposals: [] });
+    const cardProposal = review.proposals.find(proposal => proposal.containedValue === "Card.\u200B" && proposal.containingValue === "DEBIT\tCARD");
+
+    expect(cardProposal).toMatchObject({ column: "Location", containedCount: 2, containingCount: 2, status: "pending" });
+    expect(review.proposals.some(proposal => proposal.containedValue === "Car")).toBe(false);
+    expect(rows.map(item => item.cleanedValues.Location)).toEqual(["Card.\u200B", "Card.\u200B", "DEBIT\tCARD", "DEBIT\tCARD", "Car"]);
+  });
+
+  it("retains a keep-separate containment decision so the same proposal does not reappear as pending", () => {
+    const rows = [row(1, "Card"), row(2, "Debit Card")];
+    const initial = __kpiImportWorkerTesting.detectContainmentReviewProposals(rows, categoryProfile, { proposals: [] });
+    const proposal = initial.proposals[0]!;
+    const afterDismissal = __kpiImportWorkerTesting.detectContainmentReviewProposals(rows, categoryProfile, { proposals: [{ ...proposal, status: "kept-separate" }] });
+
+    expect(afterDismissal.proposals).toEqual([{ ...proposal, status: "kept-separate" }]);
+    expect(rows.map(item => item.cleanedValues.Location)).toEqual(["Card", "Debit Card"]);
   });
 });

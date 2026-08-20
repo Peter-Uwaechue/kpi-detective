@@ -98,6 +98,19 @@ type CategoryReconciliationStats = {
   groups: number;
   rows: number;
 };
+type ContainmentReviewStatus = "pending" | "merged" | "kept-separate" | "superseded";
+type ContainmentReviewProposal = {
+  id: string;
+  column: string;
+  containedValue: string;
+  containingValue: string;
+  containedCount: number;
+  containingCount: number;
+  status: ContainmentReviewStatus;
+};
+type ContainmentReviewState = {
+  proposals: ContainmentReviewProposal[];
+};
 type ReviewRow = {
   rowNumber: number;
   rawValues: RawRecord;
@@ -154,6 +167,35 @@ const missing = (value: unknown) => ["", "n/a", "na", "null", "none", "-", "unde
 const headerScore = (name: string, terms: string[]) => terms.reduce((sum, term) => sum + (normalise(name) === term ? 2 : normalise(name).includes(term) ? 1 : 0), 0);
 const asRecord = (value: unknown): RawRecord => value && typeof value === "object" && !Array.isArray(value) ? value as RawRecord : {};
 const asArray = <T>(value: unknown): T[] => Array.isArray(value) ? value as T[] : [];
+
+const containmentReviewState = (checkpoint: unknown): ContainmentReviewState => {
+  const review = asRecord(asRecord(checkpoint).containmentReview);
+  const statuses = new Set<ContainmentReviewStatus>(["pending", "merged", "kept-separate", "superseded"]);
+  const proposals = asArray<Partial<ContainmentReviewProposal>>(review.proposals).flatMap(proposal => {
+    const id = text(proposal.id);
+    const column = text(proposal.column);
+    const containedValue = text(proposal.containedValue);
+    const containingValue = text(proposal.containingValue);
+    const status = text(proposal.status) as ContainmentReviewStatus;
+    if (!id || !column || !containedValue || !containingValue || !statuses.has(status)) return [];
+    return [{
+      id,
+      column,
+      containedValue,
+      containingValue,
+      containedCount: Math.max(0, Number(proposal.containedCount) || 0),
+      containingCount: Math.max(0, Number(proposal.containingCount) || 0),
+      status,
+    }];
+  });
+  return { proposals };
+};
+
+const withContainmentReviewState = (checkpoint: unknown, state: ContainmentReviewState, updates: RawRecord = {}) => ({
+  ...asRecord(checkpoint),
+  ...updates,
+  containmentReview: state,
+});
 const signatureFor = (values: RawRecord) => crypto.createHash("sha256").update(JSON.stringify(values)).digest("hex");
 
 const parseNumber = (value: unknown): number | null => {
@@ -875,6 +917,44 @@ function applyFuzzyCategoryReview(rows: ReviewRow[], profiles: ColumnProfile[], 
   return changedRows;
 }
 
+const containmentProposalId = (column: string, containedValue: string, containingValue: string) => `${column}\u0000${containedValue}\u0000${containingValue}`;
+
+function detectContainmentReviewProposals(rows: ReviewRow[], profiles: ColumnProfile[], existing: ContainmentReviewState): ContainmentReviewState {
+  const existingById = new Map(existing.proposals.map(proposal => [proposal.id, proposal]));
+  const detected: ContainmentReviewProposal[] = [];
+  profiles.filter(profile => profile.kind === "category").forEach(profile => {
+    const frequency = new Map<string, number>();
+    rows.filter(row => !row.excluded).forEach(row => {
+      const value = String(row.cleanedValues[profile.name] ?? UNKNOWN);
+      if (value !== UNKNOWN) frequency.set(value, (frequency.get(value) ?? 0) + 1);
+    });
+    const values = Array.from(frequency.keys());
+    // The same value-cardinality guard used by fuzzy review protects the confirmation screen from noisy, high-cardinality free text.
+    if (values.length > MAX_FUZZY_CATEGORY_VALUES) return;
+    const keyed = values.map(value => ({ value, key: categoryMatchKey(value), count: frequency.get(value) ?? 0 })).filter(item => item.key.length >= 3);
+    keyed.forEach(shorter => {
+      keyed.forEach(longer => {
+        const isWholeValueContainment = (` ${longer.key} `).includes(` ${shorter.key} `);
+        if (shorter.value === longer.value || longer.key.length <= shorter.key.length || !isWholeValueContainment) return;
+        const id = containmentProposalId(profile.name, shorter.value, longer.value);
+        const previous = existingById.get(id);
+        detected.push(previous ?? {
+          id,
+          column: profile.name,
+          containedValue: shorter.value,
+          containingValue: longer.value,
+          containedCount: shorter.count,
+          containingCount: longer.count,
+          status: "pending",
+        });
+      });
+    });
+  });
+  const detectedIds = new Set(detected.map(proposal => proposal.id));
+  const retained = existing.proposals.filter(proposal => !detectedIds.has(proposal.id) && proposal.status !== "pending");
+  return { proposals: [...detected, ...retained].sort((left, right) => left.column.localeCompare(right.column) || left.containedValue.localeCompare(right.containedValue) || left.containingValue.localeCompare(right.containingValue)) };
+}
+
 function applyPossibleDuplicateReview(rows: ReviewRow[], profiles: ColumnProfile[], stats: WorkerStats) {
   const changedRows = new Set<number>();
   const date = findDate(profiles);
@@ -992,6 +1072,7 @@ async function recalculateFromStoredRows(importId: string, profiles: ColumnProfi
   const job = await getKpiImport(importId);
   if (!job) throw new Error("Import job was not found.");
   const rows = toReviewRows(await getAllImportRows(importId));
+  const containmentReview = containmentReviewState(job.workerCheckpointJson);
   const revertedAutomaticAbbreviations = revertDeprecatedAutomaticAbbreviationChanges(rows);
   if (revertedAutomaticAbbreviations.length) await persistReviewRows(importId, revertedAutomaticAbbreviations);
   const metric = findMetric(profiles);
@@ -1046,7 +1127,7 @@ async function recalculateFromStoredRows(importId: string, profiles: ColumnProfi
       // Preserve the baseline if removing outliers leaves too little period coverage for a valid comparison.
     }
   }
-  await updateKpiImport(importId, { status: "complete", sourceRowCount: rows.length, usableRowCount: baseline.usableRows, previewRowCount: rows.length, columnsJson: profiles, cleaningSummaryJson: logsFromStats(stats, metric, currency, reconciliations), analysisJson: analysis, workerCheckpointJson: { phase: "complete", processedRows: rows.length, recalculated: true }, completedAt: new Date() });
+  await updateKpiImport(importId, { status: "complete", sourceRowCount: rows.length, usableRowCount: baseline.usableRows, previewRowCount: rows.length, columnsJson: profiles, cleaningSummaryJson: logsFromStats(stats, metric, currency, reconciliations), analysisJson: analysis, workerCheckpointJson: withContainmentReviewState(job.workerCheckpointJson, containmentReview, { phase: "complete", processedRows: rows.length, recalculated: true }), completedAt: new Date() });
   return analysis;
 }
 
@@ -1111,10 +1192,12 @@ export async function processKpiImport(importId: string, options: { claimed?: bo
   await updateKpiImport(importId, { status: "analyzing", workerCheckpointJson: { phase: "analyzing", processedRows: stats.sourceRows } });
   const reviewRows = toReviewRows(await getAllImportRows(importId));
   const fuzzyChanges = applyFuzzyCategoryReview(reviewRows, profiles, stats);
+  const containmentReview = detectContainmentReviewProposals(reviewRows, profiles, containmentReviewState(job.workerCheckpointJson));
   const duplicateChanges = applyPossibleDuplicateReview(reviewRows, profiles, stats);
   const outlierChanges = applyOutlierReview(reviewRows, profiles, stats);
   const changedRows = new Set(Array.from(fuzzyChanges).concat(Array.from(duplicateChanges), Array.from(outlierChanges)));
   await persistReviewRows(importId, reviewRows.filter(row => changedRows.has(row.rowNumber)));
+  await updateKpiImport(importId, { workerCheckpointJson: withContainmentReviewState(job.workerCheckpointJson, containmentReview, { phase: "containment-review", processedRows: stats.sourceRows }) });
   return recalculateFromStoredRows(importId, profiles);
 }
 
@@ -1159,6 +1242,40 @@ export async function applyImportReviewAction(input: { importId: string; rowNumb
   return { success: true };
 }
 
+export async function applyContainmentReviewDecision(input: { importId: string; proposalId: string; decision: "merge" | "keep-separate" }) {
+  const job = await getKpiImport(input.importId);
+  if (!job) throw new Error("Import job was not found.");
+  const profiles = asArray<ColumnProfile>(job.columnsJson);
+  const state = containmentReviewState(job.workerCheckpointJson);
+  const proposal = state.proposals.find(candidate => candidate.id === input.proposalId);
+  if (!proposal || proposal.status !== "pending") throw new Error("That containment review item is no longer awaiting a decision.");
+  let nextState: ContainmentReviewState;
+  if (input.decision === "keep-separate") {
+    nextState = { proposals: state.proposals.map(candidate => candidate.id === proposal.id ? { ...candidate, status: "kept-separate" } : candidate) };
+    await updateKpiImport(input.importId, { workerCheckpointJson: withContainmentReviewState(job.workerCheckpointJson, nextState, { phase: "containment-review" }) });
+    return { changedRows: 0, analysis: job.analysisJson, decision: "keep-separate" as const };
+  }
+  const rows = toReviewRows(await getAllImportRows(input.importId));
+  const changedRows = rows.filter(row => row.cleanedValues[proposal.column] === proposal.containedValue);
+  if (!changedRows.length) throw new Error("Those values have already changed, so this review item can no longer be merged.");
+  changedRows.forEach(row => {
+    row.cleanedValues[proposal.column] = proposal.containingValue;
+    row.changes.push({ column: proposal.column, from: proposal.containedValue, to: proposal.containingValue, reason: "Merged after user-confirmed containment review" });
+    row.rowSignature = signatureFor(row.cleanedValues);
+  });
+  await persistReviewRows(input.importId, changedRows);
+  nextState = {
+    proposals: state.proposals.map(candidate => {
+      if (candidate.id === proposal.id) return { ...candidate, status: "merged" };
+      if (candidate.status === "pending" && candidate.column === proposal.column && candidate.containedValue === proposal.containedValue) return { ...candidate, status: "superseded" };
+      return candidate;
+    }),
+  };
+  await updateKpiImport(input.importId, { status: "analyzing", workerCheckpointJson: withContainmentReviewState(job.workerCheckpointJson, nextState, { phase: "containment-review-merge" }) });
+  const analysis = await recalculateFromStoredRows(input.importId, profiles);
+  return { changedRows: changedRows.length, analysis, decision: "merge" as const };
+}
+
 export async function repairDeprecatedAutomaticAbbreviationMerges(importId: string) {
   const job = await getKpiImport(importId);
   if (!job) throw new Error("Import job was not found.");
@@ -1196,7 +1313,7 @@ export async function recalculateKpiImport(importId: string) {
   if (!job) throw new Error("Import job was not found.");
   const profiles = asArray<ColumnProfile>(job.columnsJson);
   if (!profiles.length) throw new Error("The import has no stored column profile to recalculate.");
-  await updateKpiImport(importId, { status: "analyzing", errorMessage: null, workerCheckpointJson: { phase: "review-recalculation" } });
+  await updateKpiImport(importId, { status: "analyzing", errorMessage: null, workerCheckpointJson: withContainmentReviewState(job.workerCheckpointJson, containmentReviewState(job.workerCheckpointJson), { phase: "review-recalculation" }) });
   return recalculateFromStoredRows(importId, profiles);
 }
 
@@ -1220,7 +1337,7 @@ export async function selectKpiImportMetric(importId: string, metricName: string
   const profiles = asArray<ColumnProfile>(job.columnsJson);
   if (!profiles.length) throw new Error("The import has no stored column profile to update.");
   const selectedProfiles = applyMetricSelection(profiles, metricName);
-  await updateKpiImport(importId, { status: "analyzing", columnsJson: selectedProfiles, errorMessage: null, workerCheckpointJson: { phase: "kpi-selection", metricName } });
+  await updateKpiImport(importId, { status: "analyzing", columnsJson: selectedProfiles, errorMessage: null, workerCheckpointJson: withContainmentReviewState(job.workerCheckpointJson, containmentReviewState(job.workerCheckpointJson), { phase: "kpi-selection", metricName }) });
   const analysis = await recalculateFromStoredRows(importId, selectedProfiles);
   return { analysis, profiles: selectedProfiles };
 }
@@ -1256,6 +1373,7 @@ export const __kpiImportWorkerTesting = {
   parseUnixTimestamp,
   cleanRow,
   applyFuzzyCategoryReview,
+  detectContainmentReviewProposals,
   revertDeprecatedAutomaticAbbreviationChanges,
   repairDeprecatedAutomaticAbbreviationMerges,
   applyPossibleDuplicateReview,

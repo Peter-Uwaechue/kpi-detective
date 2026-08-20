@@ -323,3 +323,18 @@
 .currency-selector { display: flex; align-items: center; justify-content: space-between; gap: 16px; margin: 20px 0; padding: 16px 18px; border: 1px solid #d9e5e1; border-radius: 16px; background: linear-gradient(135deg, #f6fbf9, #fff); }
 .currency-selector-copy { min-width: 0; }.currency-selector-copy .eyebrow { display: block; margin-bottom: 4px; }.currency-selector-copy p { margin: 0; color: var(--muted); font-size: 13px; line-height: 1.45; }.currency-selector label { min-width: min(360px, 52vw); }.currency-selector select { width: 100%; min-height: 42px; padding: 0 34px 0 12px; border: 1px solid var(--line-dark); border-radius: 10px; color: var(--ink); background: var(--card); font: inherit; font-size: 13px; cursor: pointer; }.currency-selector select:focus-visible { outline: 3px solid rgba(27, 131, 112, .24); outline-offset: 2px; border-color: var(--mint-deep); }.currency-selector.is-compact { margin: 0; padding: 0; border: 0; border-radius: 0; background: transparent; gap: 7px; }.currency-selector.is-compact .currency-selector-copy { display: none; }.currency-selector.is-compact label { min-width: 0; max-width: 184px; }.currency-selector.is-compact select { min-height: 34px; padding: 0 24px 0 9px; border-radius: 8px; font-size: 12px; }
 @media (max-width: 720px) { .currency-selector { align-items: stretch; flex-direction: column; gap: 10px; }.currency-selector label { min-width: 0; width: 100%; }.currency-selector.is-compact { flex-direction: row; width: auto; }.currency-selector.is-compact label { width: 150px; } }
+
+/* Review-only substring containment proposals */
+.containment-review-panel { margin-top: 1rem; padding: 1.35rem; border: 1px solid color-mix(in srgb, var(--ink) 12%, var(--card)); border-radius: 18px; background: linear-gradient(135deg, color-mix(in srgb, var(--card) 92%, #fff8e8), var(--card)); box-shadow: 0 10px 26px rgba(24, 32, 26, .055); }
+.containment-review-heading { display: flex; align-items: flex-start; justify-content: space-between; gap: 1rem; }
+.containment-review-heading h2 { margin: .15rem 0 0; font-size: 1.18rem; letter-spacing: -.025em; }
+.containment-review-heading > span { flex: none; padding: .28rem .55rem; border-radius: 999px; color: #76520d; background: #fff1c9; font-size: .73rem; font-weight: 800; text-transform: uppercase; letter-spacing: .06em; }
+.containment-review-panel > p { max-width: 75ch; margin: .75rem 0 1rem; color: var(--muted); font-size: .88rem; line-height: 1.55; }
+.containment-review-list { display: grid; gap: .7rem; }
+.containment-review-item { display: flex; align-items: center; justify-content: space-between; gap: 1rem; padding: 1rem; border: 1px solid color-mix(in srgb, var(--ink) 10%, var(--card)); border-radius: 13px; background: color-mix(in srgb, var(--card) 96%, #fff); }
+.containment-review-item strong { display: block; color: var(--muted); font-size: .72rem; font-weight: 800; letter-spacing: .055em; text-transform: uppercase; }
+.containment-review-item p { margin: .32rem 0 0; font-size: .89rem; line-height: 1.45; }
+.containment-review-item p b { color: var(--ink); }
+.containment-review-actions { display: flex; flex: none; flex-wrap: wrap; justify-content: flex-end; gap: .55rem; }
+.containment-review-actions button { min-height: 36px; font-size: .78rem; white-space: nowrap; }
+@media (max-width: 720px) { .containment-review-heading, .containment-review-item { align-items: stretch; flex-direction: column; } .containment-review-actions { justify-content: flex-start; } .containment-review-actions button { flex: 1 1 150px; } }
