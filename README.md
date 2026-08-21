@@ -9,7 +9,6 @@
 
 **KPI Detective** is an AI-assisted KPI investigation app for non-technical business owners. Upload a CSV or XLSX export, review the cleaning decisions, select the KPI that matters, and receive a plain-English explanation of the latest period-over-period movement—supported by transparent totals, driver cards, counterfactuals, review flags, and follow-up questions through **Ask Peter the Analyst**.
 
-The application is intentionally separate from the Willers Solutions website. It has its own repository, deployment, import data model, storage prefix, and product experience.
 
 ## Table of Contents
 
