@@ -335,6 +335,22 @@ export default function KPIDetective() {
     document.title = "KPI Detective — Understand your numbers";
   }, []);
 
+  // Entering the results screen replaces the long review view. Reset the root
+  // viewport after render, then once more on the next frame for mobile Safari
+  // and other browsers that preserve scroll position through a state change.
+  useEffect(() => {
+    if (stage !== "results" || typeof window === "undefined") return;
+    const resetResultsViewport = () => {
+      window.scrollTo({ top: 0, left: 0, behavior: "auto" });
+      document.scrollingElement?.scrollTo({ top: 0, left: 0, behavior: "auto" });
+      document.documentElement.scrollTop = 0;
+      document.body.scrollTop = 0;
+    };
+    resetResultsViewport();
+    const frame = window.requestAnimationFrame(resetResultsViewport);
+    return () => window.cancelAnimationFrame(frame);
+  }, [stage]);
+
   useEffect(() => {
     if (!remoteImport) return;
     setFileName(remoteImport.originalFileName);
