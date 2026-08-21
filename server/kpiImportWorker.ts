@@ -214,14 +214,20 @@ const parseNumber = (value: unknown): number | null => {
   if (typeof value === "number") return Number.isFinite(value) ? value : null;
   const raw = text(value).replace(/^'/, ""); // Excel/Sheets text-preservation apostrophe.
   if (!raw || missing(raw)) return null;
-  const accountingSuffix = raw.match(/\b(CR|DR)\s*$/i)?.[1]?.toUpperCase();
-  const negative = /^\(.*\)$/.test(raw) || /^\s*-/.test(raw) || /-\s*$/.test(raw) || accountingSuffix === "DR";
-  const compact = raw
-    .replace(/-\s*$/, "")
-    .replace(/\b(?:CR|DR)\s*$/i, "")
+  // Exporters commonly prefix an accounting negative with a currency code, e.g.
+  // `NGN (1,234.56)`. Determine the sign after removing currency decoration so
+  // the parentheses remain adjacent to the number and retain their meaning.
+  const signCandidate = raw
     .replace(/R\$/gi, "")
     .replace(CURRENCY_CODE_PATTERN, "")
-    .replace(/[()\s$€£¥₦₹₩₺₪₫₱฿%]/g, "")
+    .replace(/[$€£¥₦₹₩₺₪₫₱฿]/g, "")
+    .trim();
+  const accountingSuffix = signCandidate.match(/\b(CR|DR)\s*$/i)?.[1]?.toUpperCase();
+  const negative = /^\(.*\)$/.test(signCandidate) || /^\s*-/.test(signCandidate) || /-\s*$/.test(signCandidate) || accountingSuffix === "DR";
+  const compact = signCandidate
+    .replace(/-\s*$/, "")
+    .replace(/\b(?:CR|DR)\s*$/i, "")
+    .replace(/[()\s%]/g, "")
     .replace(/[’']/g, "");
   const suffix = compact.match(/([KMB])$/i)?.[1]?.toUpperCase();
   const withoutSuffix = suffix ? compact.slice(0, -1) : compact;
@@ -517,7 +523,13 @@ const metricCandidateReason = (profile: ColumnProfile) => {
 
 const isDateSupportNumeric = (profile: ColumnProfile, profiles: ColumnProfile[]) => {
   if (!profiles.some(candidate => candidate.kind === "date")) return false;
-  return headerMatches(profile.name, ["year", "month", "day", "week", "quarter", "fiscal"]);
+  const header = normalise(profile.name);
+  const calendarComponent = headerMatches(profile.name, ["year", "month", "day", "week", "quarter", "fiscal"]);
+  // Unix/epoch support fields are numeric encodings of time, not business KPIs.
+  // Suppress only clearly named timestamp forms so an unrelated business field
+  // containing a word like "epoch" is not hidden.
+  const unixTimestamp = /\b(?:unix|epoch)\b/.test(header) && /\b(?:second|seconds|millisecond|milliseconds|timestamp|time|ms)\b/.test(header);
+  return calendarComponent || unixTimestamp;
 };
 
 const markMetricCandidates = (profiles: ColumnProfile[], selectedMetric: ColumnProfile | null, derivedMetric: ColumnProfile | null) => {

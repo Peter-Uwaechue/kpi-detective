@@ -850,3 +850,53 @@ describe("KPI import cross-field date and tax semantics safeguards", () => {
     expect(rateCleaned.cleanedValues.__derived_amount__).toBe(215);
   });
 });
+
+
+describe("KPI import numeric-sign and timestamp candidate safeguards", () => {
+  const workerStats = () => ({
+    sourceRows: 0,
+    usableRows: 0,
+    exactDuplicates: 0,
+    missingNumeric: 0,
+    invalidNumeric: 0,
+    dateChanges: 0,
+    numericChanges: 0,
+    categoryChanges: 0,
+    fuzzyCategoryMerges: 0,
+    fuzzyCategoryRows: 0,
+    possibleDuplicates: 0,
+    outliers: 0,
+    outlierColumns: {},
+  });
+
+  it("parses currency-prefixed accounting parentheses as negative monetary values", () => {
+    const rows: RawRecord[] = [
+      { OrderDate: "2026-07-01", NetRevenue: "NGN (1,234.56)" },
+      { OrderDate: "2026-07-02", NetRevenue: "USD (2,500.00)" },
+      { OrderDate: "2026-07-03", NetRevenue: "₦ (99.25)" },
+      { OrderDate: "2026-07-04", NetRevenue: "NGN 300.00 CR" },
+      { OrderDate: "2026-07-05", NetRevenue: "NGN 125.00 DR" },
+    ];
+    const profiles = __kpiImportWorkerTesting.inferProfiles(Object.keys(rows[0]!), rows);
+    const cleaned = rows.map(row => __kpiImportWorkerTesting.cleanRow(row, profiles, workerStats()));
+
+    expect(cleaned.map(row => row.cleanedValues.NetRevenue)).toEqual([-1234.56, -2500, -99.25, 300, -125]);
+  });
+
+  it("does not present clearly named Unix second or millisecond support fields as KPIs when a business date exists", () => {
+    const rows: RawRecord[] = [
+      { OrderDate: "2026-07-01", "Unix Seconds": "1782864000", "Unix Milliseconds": "1782864000000", NetRevenue: "100" },
+      { OrderDate: "2026-07-02", "Unix Seconds": "1782950400", "Unix Milliseconds": "1782950400000", NetRevenue: "110" },
+      { OrderDate: "2026-07-03", "Unix Seconds": "1783036800", "Unix Milliseconds": "1783036800000", NetRevenue: "120" },
+      { OrderDate: "2026-07-04", "Unix Seconds": "1783123200", "Unix Milliseconds": "1783123200000", NetRevenue: "130" },
+      { OrderDate: "2026-07-05", "Unix Seconds": "1783209600", "Unix Milliseconds": "1783209600000", NetRevenue: "140" },
+    ];
+    const profiles = __kpiImportWorkerTesting.inferProfiles(Object.keys(rows[0]!), rows);
+    const candidates = profiles.filter(profile => profile.isMetricCandidate).map(profile => profile.name);
+
+    expect(__kpiImportWorkerTesting.findMetric(profiles)).toMatchObject({ name: "NetRevenue", isSelectedMetric: true });
+    expect(candidates).toContain("NetRevenue");
+    expect(candidates).not.toContain("Unix Seconds");
+    expect(candidates).not.toContain("Unix Milliseconds");
+  });
+});
